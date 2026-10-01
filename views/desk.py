@@ -172,7 +172,7 @@ def render(cfg, plan, label):
             st.caption("No regular-hours bars yet.")
     with st.expander("Feeds", expanded=False):
         st.caption(f"Price feed {px_src or cfg['price_symbol']} · official SPX close {plan['sources'].get('spx')} · VIX {plan['sources'].get('vix')} · "
-                   f"options chain {plan['sources'].get('chain')}")
+                   f"options chain {plan['sources'].get('chain')} · {st.session_state.get('bc_secret_status', '')}")
         st.caption(f"C5 {plan['notes'].get('c5', '')} · C6 {plan['notes'].get('c6', '')} · C7 {plan['notes'].get('c7', '')}")
         if last_spx is not None:
             st.caption(f"Last price print {last_spx:,.2f} at {last_t}.")

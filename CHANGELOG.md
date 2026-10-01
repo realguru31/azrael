@@ -1,6 +1,28 @@
 # Changelog
 All notable changes to the Azraël Desk app. Format: Keep a Changelog; versions are semantic.
 
+## [1.0.4] — 2026-10-01
+### Changed
+- Cookie mint replaced by the working vs3d2 job verbatim: `scripts/mint_cookies.py` (stdlib + Playwright only) and
+  `.github/workflows/barchart_cookies.yml` (same install lines, `permissions: contents: write`, commits
+  `data/session/cookies.json`). The app's default cookie path is that file.
+- Files: `scripts/mint_cookies.py`, `.github/workflows/barchart_cookies.yml`, `data/barchart.py`, `data/session/.gitkeep`, `scripts/release.py`.
+
+## [1.0.3] — 2026-10-01
+### Changed
+- Barchart cookie loader ported from the working vs3d2 app: `BC_COOKIES_JSON` secret → `BC_COOKIE_URL` (+`BC_COOKIE_TOKEN`,
+  `?v=` cache-bust) → disk (`store/session`, `data/session`, `data/baseline`), paths anchored to the app folder; every
+  failing source explains itself in the Feeds line. `baseLastPrice` added to the field set. Streamlit secrets are exported
+  to the environment for the fetch layer.
+- Files: `data/barchart.py`, `views/common.py`, `.streamlit/secrets.toml.example`.
+
+## [1.0.2] — 2026-10-01
+### Added
+- Barchart cookies can be supplied through Streamlit secrets (`[barchart] cookies_json`), e.g. minted in Colab with
+  `tools/colab_barchart_check.py`, which now prints the exact secret to paste. The newer of secret vs repo cookies wins.
+  The Feeds expander reports which was used.
+- Files: `views/common.py`, `views/desk.py`, `tools/colab_barchart_check.py`, `.streamlit/secrets.toml.example`.
+
 ## [1.0.1] — 2026-10-01
 ### Fixed
 - Plotly chart (fallback engine) drew no price: it received the SPX cash 5-minute bars (empty before 09:30) instead of the

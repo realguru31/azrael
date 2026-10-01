@@ -8,8 +8,8 @@ import pandas as pd
 logger = logging.getLogger(__name__)
 BC_API = "https://www.barchart.com/proxies/core-api/v1/options/get"
 BC_PAGE = "https://www.barchart.com/stocks/quotes/$SPX/volatility-greeks"
-COOKIE_PATH = "store/session/cookies.json"
-FIELDS = "strikePrice,lastPrice,volatility,delta,gamma,theta,vega,volume,openInterest,optionType,bidPrice,askPrice"
+COOKIE_PATH = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "data", "session", "cookies.json")
+FIELDS = "strikePrice,lastPrice,volatility,delta,gamma,theta,vega,volume,openInterest,optionType,bidPrice,askPrice,baseLastPrice"
 UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
 
 def _headers(ua):
@@ -19,27 +19,94 @@ def _headers(ua):
             "X-Requested-With": "XMLHttpRequest"}
 
 _last_reason = "not attempted"
+_APP_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+_REQUIRED = ("aws-waf-token", "laravel_session")
+_url_cache = {"ts": 0.0, "blob": None, "url": None}
 
 
 def last_reason() -> str:
     return _last_reason
 
 
-def _cookies():
-    global _last_reason
-    if not os.path.exists(COOKIE_PATH):
-        _last_reason = "no cookie file (run the 'Barchart cookie mint' workflow)"; return None
+def _secret(name: str) -> str:
+    return str(os.environ.get(name) or "").strip()        # Streamlit secrets are exported to env by views/common.py
+
+
+def _valid(blob, where: str, why: list):
+    ck = (blob or {}).get("cookies") or {}
+    if any(k not in ck for k in _REQUIRED):
+        why.append(f"{where}: blob lacks {list(_REQUIRED)} — re-mint"); return None
+    blob["_path"] = where
     try:
-        blob = json.load(open(COOKIE_PATH))
-    except Exception as e:
-        _last_reason = f"cookie file unreadable: {e}"; return None
-    if not {"aws-waf-token", "laravel_session"} <= set(blob.get("cookies", {})):
-        _last_reason = "cookie file missing aws-waf-token / laravel_session"; return None
+        blob["_age_min"] = (time.time() - float(blob.get("minted_at", 0))) / 60.0
+    except Exception:
+        blob["_age_min"] = float("nan")
     return blob
+
+
+def _cookies():
+    """Minted cookie blob, in the priority of the proven vs3d2 loader:
+      (0) BC_COOKIES_JSON secret — the blob pasted verbatim (Colab mint)
+      (1) BC_COOKIE_URL secret   — raw GitHub URL of the cookies.json your mint job already commits
+                                   (BC_COOKIE_TOKEN for a private repo; ?v= busts raw's 5-min cache)
+      (2) on disk: store/session/cookies.json · data/session/cookies.json · data/baseline/cookies.json
+    Requires aws-waf-token AND laravel_session; ALL blob cookies are sent as-is."""
+    global _last_reason
+    why = []
+    raw = _secret("BC_COOKIES_JSON")
+    if raw:
+        try:
+            b = _valid(json.loads(raw), "secret:BC_COOKIES_JSON", why)
+            if b:
+                _last_reason = "ok"; return b
+        except Exception as e:
+            why.append(f"BC_COOKIES_JSON is not valid JSON ({type(e).__name__})")
+    url, tok = _secret("BC_COOKIE_URL"), _secret("BC_COOKIE_TOKEN")
+    if url:
+        try:
+            if _url_cache["blob"] is not None and _url_cache["url"] == url and time.time() - _url_cache["ts"] < 60:
+                return _url_cache["blob"]
+            import requests as _rq
+            hdr = {"accept": "application/json", "user-agent": UA}
+            if tok:
+                hdr["authorization"] = "token " + tok
+            r = _rq.get(url, params={"v": int(time.time() // 60)}, headers=hdr, timeout=10)
+            if r.status_code == 200:
+                b = _valid(r.json(), "url:" + url, why)
+                if b:
+                    _url_cache.update(ts=time.time(), blob=b, url=url); _last_reason = "ok"; return b
+            else:
+                why.append(f"BC_COOKIE_URL → HTTP {r.status_code} ("
+                           + ("file not published yet — run the mint workflow once" if r.status_code == 404
+                              else "private repo needs BC_COOKIE_TOKEN" if r.status_code in (401, 403) else "check the URL") + ")")
+        except Exception as e:
+            why.append(f"BC_COOKIE_URL fetch failed: {type(e).__name__}: {e}")
+    paths = []
+    for base in (_APP_DIR, os.getcwd()):
+        for rel in (os.path.join("store", "session", "cookies.json"), os.path.join("data", "session", "cookies.json"),
+                    os.path.join("data", "baseline", "cookies.json")):
+            p = os.path.join(base, rel)
+            if p not in paths:
+                paths.append(p)
+    for p in paths:
+        try:
+            if not os.path.exists(p):
+                continue
+            b = _valid(json.load(open(p)), p, why)
+            if b:
+                _last_reason = "ok"; return b
+        except Exception as e:
+            why.append(f"{p}: {type(e).__name__}: {e}")
+    if not why:
+        why.append("no BC_COOKIES_JSON / BC_COOKIE_URL secret and no cookies.json on disk — point BC_COOKIE_URL at the "
+                   "raw GitHub URL of the cookies.json your mint job commits")
+    _last_reason = "; ".join(why)
+    return None
+
 
 def cookie_age_min() -> Optional[float]:
     blob = _cookies()
-    return (time.time() - blob.get("minted_at", 0)) / 60 if blob else None
+    return blob.get("_age_min") if blob else None
 
 
 def get_rows(expiry: str, base_symbol: str = "$SPX") -> Optional[pd.DataFrame]:
@@ -59,8 +126,8 @@ def get_rows(expiry: str, base_symbol: str = "$SPX") -> Optional[pd.DataFrame]:
                                   "orderDir": "desc", "raw": "1", "fields": FIELDS}, cookies=blob["cookies"],
                   headers=_headers(blob.get("user_agent", UA)), timeout=20)
         if r.status_code != 200:
-            age = (time.time() - blob.get("minted_at", 0)) / 60
-            _last_reason = f"HTTP {r.status_code} with cookies {age:.0f} min old (WAF rejected them — re-mint)"; return None
+            age = blob.get("_age_min", float("nan"))
+            _last_reason = f"HTTP {r.status_code} — cookies {age:.0f} min old from {blob.get('_path')} were sent and REJECTED (re-mint)"; return None
         data = r.json().get("data") or {}
     except Exception as e:
         _last_reason = f"request failed: {type(e).__name__}: {e}"; return None
@@ -89,37 +156,5 @@ def get_rows(expiry: str, base_symbol: str = "$SPX") -> Optional[pd.DataFrame]:
     return df
 
 
-async def _mint_async():
-    from playwright.async_api import async_playwright
-    p = await async_playwright().start()
-    b = await p.chromium.launch(args=["--no-sandbox", "--disable-dev-shm-usage", "--disable-blink-features=AutomationControlled"])
-    ctx = await b.new_context(user_agent=UA, viewport={"width": 1440, "height": 900}, locale="en-US"); page = await ctx.new_page()
-    t0 = time.time()
-    await page.goto(BC_PAGE, wait_until="domcontentloaded", timeout=60000)
-    cookies = {}
-    for _ in range(40):
-        cookies = {c["name"]: c["value"] for c in await ctx.cookies()}
-        if "laravel_session" in cookies and "aws-waf-token" in cookies:
-            break
-        await page.wait_for_timeout(1000)
-    title = await page.title()
-    verify = await page.evaluate("""async (url) => { const r = await fetch(url, {headers:{'Accept':'application/json'}, credentials:'include'}); return r.status; }""",
-                                 BC_API + "?baseSymbol=%24SPX&groupBy=optionType&expirationDate=nearest&orderBy=strikePrice&orderDir=desc&raw=1&fields=strikePrice,optionType")
-    await b.close(); await p.stop()
-    print(f"solve time: {time.time() - t0:.1f}s"); print(f"page title: {title[:70]}"); print(f"cookies: {sorted(cookies)}")
-    print(f"in-page verify: status={verify}")
-    if verify != 200:
-        raise RuntimeError(f"in-page verify failed: {verify}")
-    return {k: v for k, v in cookies.items() if k in ("aws-waf-token", "laravel_session", "bc_anon", "bcFreeUserPageView")}
-
-def mint():
-    import asyncio
-    os.makedirs(os.path.dirname(COOKIE_PATH), exist_ok=True)
-    ck = asyncio.run(_mint_async())
-    json.dump({"minted_at": int(time.time()), "user_agent": UA, "cookies": ck}, open(COOKIE_PATH, "w"), indent=2)
-    print("saved", COOKIE_PATH)
-
 if __name__ == "__main__":
-    import sys
-    if "--mint" in sys.argv:
-        mint()
+    print("mint moved to scripts/mint_cookies.py (stdlib + Playwright) — run that instead")

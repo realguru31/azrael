@@ -101,7 +101,52 @@ def tv_creds() -> Optional[Tuple[str, str]]:
     return None
 
 
+def configure_barchart_from_secrets() -> str:
+    """Exports BC_COOKIE_URL / BC_COOKIE_TOKEN / BC_COOKIES_JSON from Streamlit secrets to the environment (the fetch
+    layer reads env), and still accepts the older [barchart] cookies_json table. Returns a status for the Feeds line."""
+    try:
+        exported = []
+        for k in ("BC_COOKIE_URL", "BC_COOKIE_TOKEN", "BC_COOKIES_JSON"):
+            v = st.secrets.get(k, None)
+            if v:
+                os.environ[k] = str(v).strip(); exported.append(k)
+        bc = st.secrets.get("barchart", None)
+        if bc and bc.get("cookies_json") and "BC_COOKIES_JSON" not in exported:
+            os.environ["BC_COOKIES_JSON"] = str(bc["cookies_json"]); exported.append("BC_COOKIES_JSON (table)")
+        if exported:
+            return "barchart cookie source: " + ", ".join(exported)
+        return "no barchart secrets (BC_COOKIE_URL / BC_COOKIES_JSON)"
+    except Exception as e:
+        return f"barchart secrets invalid: {e}"
+
+
+def _legacy_unused():
+    try:
+        bc = st.secrets.get("barchart", None)
+        if not bc or not bc.get("cookies_json"):
+            return "no barchart secrets"
+        blob = json.loads(bc["cookies_json"])
+        if "cookies" not in blob:
+            blob = {"minted_at": int(time.time()), "user_agent": blob.get("user_agent", ""), "cookies": blob}
+        os.makedirs("store/session", exist_ok=True)
+        path = "store/session/cookies.json"
+        existing = None
+        if os.path.exists(path):
+            try:
+                existing = json.load(open(path))
+            except Exception:
+                existing = None
+        # the newer of the two wins: a fresh GitHub mint beats a stale pasted secret and vice versa
+        if existing is None or blob.get("minted_at", 0) >= existing.get("minted_at", 0):
+            json.dump(blob, open(path, "w"), indent=1)
+            return "barchart cookies loaded from secrets"
+        return "barchart cookies from the repo (newer than secrets)"
+    except Exception as e:
+        return f"barchart secrets invalid: {e}"
+
+
 def configure_storage() -> None:
+    st.session_state["bc_secret_status"] = configure_barchart_from_secrets()
     try:
         gs = st.secrets.get("gsheets", None)
         if gs:

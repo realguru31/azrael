@@ -13,5 +13,7 @@ print("reason:", BC.last_reason(), "| rows:", None if rows is None else len(rows
 if rows is not None:
     agg = F.aggregate_rows(rows)
     print(agg.sort_values("total_oi", ascending=False).head(10)[["strike", "c_oi", "p_oi", "total_oi", "c_volume", "p_volume", "c_mark", "p_mark"]])
+# Paste into Streamlit secrets (Manage app -> Settings -> Secrets) to use these cookies without GitHub Actions:
+import json; print("\n[barchart]\ncookies_json = '" + json.dumps(json.load(open("store/session/cookies.json"))) + "'")
 # A table of the top-OI strikes means the chain path is good end to end; 'HTTP 403' means the minted cookies were rejected
 # from this IP; 'no cookie file' means the mint step did not run or did not commit.

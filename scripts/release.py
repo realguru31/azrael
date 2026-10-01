@@ -18,7 +18,7 @@ with zipfile.ZipFile(out, "w", zipfile.ZIP_DEFLATED) as z:
             rel = os.path.relpath(p, ".")
             if rel == "desk_settings.toml" or rel.endswith(".pyc"):
                 continue
-            if rel.startswith("store/") and not fn == ".gitkeep":
+            if (rel.startswith("store/") or rel.startswith("data/session/")) and not fn == ".gitkeep":
                 continue
             z.write(p, os.path.join("azrael_desk", rel))
 print("built", out)

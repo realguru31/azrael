@@ -1,0 +1,8 @@
+streamlit>=1.40
+requests==2.32.3
+numpy==1.26.4
+pandas==2.2.3
+plotly>=5.18.0
+tzdata
+gspread>=6.0.0
+git+https://github.com/rongardF/tvdatafeed.git

@@ -190,6 +190,10 @@ def banner(plan: Dict, lv: Dict[str, float], bars: pd.DataFrame, last: Optional[
            chain: Optional[pd.DataFrame], locked: bool) -> Banner:
     sizing = plan["sizing"]
     plays = plays_for(plan, lv, bars, last, sizing)
+    if now_min < T_GATE_END:                      # nothing can be taken before 09:50 — show distances, never 'armed'
+        for p in plays:
+            if p.status == "armed":
+                p.status, p.status_text = "watch", p.status_text.replace(" — ARMED, wait for the qualifying 5-minute close", " (arms after the 09:50 gate)")
     cred = credit_line(plan, chain)
     notes: List[str] = []
     c7 = plan["inputs"].get("c7")

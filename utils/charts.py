@@ -107,8 +107,9 @@ def session_chart(bars: pd.DataFrame, session: date, levels: Dict[str, float], n
     if bars is not None and not bars.empty:
         if candles:
             fig.add_trace(go.Candlestick(x=bars.index.to_pydatetime(), open=bars["open"], high=bars["high"], low=bars["low"],
-                                         close=bars["close"], name="SPX 5-minute", increasing_line_color=COL["up"],
-                                         decreasing_line_color=COL["dn"], increasing_fillcolor=COL["up"], decreasing_fillcolor=COL["dn"]))
+                                         close=bars["close"], name="SPX 5-minute",
+                                         increasing_line_color="rgba(30,144,255,0.3)", decreasing_line_color="rgba(255,0,255,0.3)",
+                                         increasing_fillcolor="rgba(30,144,255,0.3)", decreasing_fillcolor="rgba(255,0,255,0.3)"))
         else:
             fig.add_trace(go.Scatter(x=bars.index.to_pydatetime(), y=bars["close"].tolist(), mode="lines",
                                      line=dict(color=_T["spot"], width=1.8), name="SPX cash, 5-minute closes"))

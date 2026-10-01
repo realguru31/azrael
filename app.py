@@ -22,7 +22,7 @@ U.configure_storage()
 cfg = U.settings()
 
 if cfg["auto"]:
-    @st.fragment(run_every=U.REFRESH_SECONDS)
+    @st.fragment(run_every=cfg["poll"])
     def _tick():
         pass
     _tick()

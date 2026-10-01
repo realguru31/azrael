@@ -82,8 +82,10 @@ def build_plan(session: date, vix_print: str = "08:15", es_print: str = "08:20",
     pm_hi = (on_hi - basis) if (on_hi is not None and basis is not None) else None
     pm_lo = (on_lo - basis) if (on_lo is not None and basis is not None) else None
     # proxy (Capital.com SPX500 CFD) basis at the prior 16:00 — usually a few points; used to shift the proxy line onto SPX
-    px_1600_prev, _ = F.print_at(px1, prev_sess, 16, 0)
-    proxy_basis = (px_1600_prev - c5) if (px_1600_prev and c5) else 0.0
+    proxy_basis = 0.0                                   # Capital.com SPX500 is already SPX-cash-adjusted; only /ES carries a basis
+    if px_src and "CME" in px_src:
+        px_1600_prev, _ = F.print_at(px1, prev_sess, 16, 0)
+        proxy_basis = (px_1600_prev - c5) if (px_1600_prev and c5) else 0.0
     if px_hi is not None and px_lo is not None:
         pm_hi, pm_lo = px_hi - proxy_basis, px_lo - proxy_basis
     # prior session high / low (SPX daily bar)

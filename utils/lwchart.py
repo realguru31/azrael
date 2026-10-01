@@ -91,7 +91,9 @@ if (D.proxy.length) {{
 let main = null;
 if (D.spx.length) {{
   if (D.candles) {{
-    main = chart.addCandlestickSeries({{ upColor: '#26a69a', downColor: '#ef5350', borderVisible: false, wickUpColor: '#26a69a', wickDownColor: '#ef5350' }});
+    main = chart.addCandlestickSeries({{ upColor: 'rgba(30,144,255,0.3)', downColor: 'rgba(255,0,255,0.3)', borderVisible: true,
+                                         borderUpColor: 'rgba(30,144,255,0.3)', borderDownColor: 'rgba(255,0,255,0.3)',
+                                         wickUpColor: 'rgba(30,144,255,0.3)', wickDownColor: 'rgba(255,0,255,0.3)' }});
   }} else {{
     main = chart.addLineSeries({{ color: D.theme.line, lineWidth: 2, priceLineVisible: true, lastValueVisible: true, title: 'SPX' }});
   }}

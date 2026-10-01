@@ -107,6 +107,24 @@ def get_bars(key: str, interval: str = "5", n_bars: int = 400, creds: Optional[T
     return None, ""
 
 
+def get_symbol_bars(ticker: str, interval: str = "1", n_bars: int = 1400, creds: Optional[Tuple[str, str]] = None,
+                    fallback_key: str = "PROXY") -> Tuple[Optional[pd.DataFrame], str]:
+    """Bars for an explicit 'EXCHANGE:SYMBOL' (the price feed the trader chose), falling back to the PROXY list."""
+    if DEMO:
+        return demo_bars("PROXY", interval, n_bars), ticker or "demo"
+    tv = _tv_client(*(creds or (None, None)))
+    if tv is not None and ticker and ":" in ticker:
+        exch, sym = ticker.split(":", 1)
+        try:
+            df = tv.get_hist(symbol=sym, exchange=exch, interval=_interval(interval), n_bars=n_bars, extended_session=True)
+            if df is not None and len(df) >= 2:
+                df = df.rename(columns={c: c.lower() for c in df.columns})
+                return _to_et(df[["open", "high", "low", "close", "volume"]]), ticker
+        except Exception as e:
+            logger.info("tv %s %s failed: %s", ticker, interval, e)
+    return get_bars(fallback_key, interval, n_bars, creds)
+
+
 def daily(key: str, n: int = 6, creds=None) -> Tuple[Optional[pd.DataFrame], str]:
     return get_bars(key, "D", n, creds, extended=False)
 

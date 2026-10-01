@@ -52,18 +52,20 @@ def render(cfg, plan, label):
     locked = label.startswith("LOCKED")
 
     # ── data
-    spx1, spx_src = U.bars("SPX", "1", 800, U.bucket())
-    spx5, _ = U.bars("SPX", "5", 400, U.bucket())
+    px1, px_src = U.price_bars(cfg["price_symbol"], "1", 1400, U.bucket())        # the price feed: Capital.com SPX500
+    if cfg.get("rules_feed", "").startswith("Price"):
+        spx5, _ = U.price_bars(cfg["price_symbol"], "5", 400, U.bucket())
+    else:
+        spx5, _ = U.bars("SPX", "5", 400, U.bucket())
+    spx1, spx_src = px1, px_src
     spy5, _ = U.bars("SPY", "5", 400, U.bucket())
     qqq5, _ = U.bars("QQQ", "5", 400, U.bucket())
-    day1 = F.session_slice(spx1, sess)
+    day1 = px1 if px1 is not None else F.session_slice(spx1, sess)
     day5 = F.session_slice(spx5, sess)
     day_spy, day_qqq = F.session_slice(spy5, sess), F.session_slice(qqq5, sess)
-    proxy, proxy_src = U.proxy_overnight_spx(plan, sess) if cfg.get("overnight", True) else (None, "")
+    proxy, proxy_src = None, ""                                                   # the price feed itself trades 24 h — no hand-off
     last_spx, last_t = F.latest(day1)
     last = last_spx
-    if last is None and proxy is not None and not proxy.empty:
-        last = float(proxy["close"].iloc[-1])
     lv = R.rule_levels(plan)
     grid = {k: lv[k] for k in ("C13", "C14", "C15", "C16", "C17")}
     gate = R.gate_test(day5) if not day5.empty else None
@@ -96,20 +98,21 @@ def render(cfg, plan, label):
     f_dt, t_dt = U.chart_window(sess)
     markers = [(datetime.combine(sess, dtime(h, mi), tzinfo=ET), txt) for h, mi, txt in
                ((9, 30, "09:30 open"), (9, 50, "09:50 gate"), (10, 15, "10:15"), (11, 5, "11:05 last bar"), (11, 30, "11:30 shutdown"), (16, 0, "16:00 settle"))]
-    ys = [l["price"] for l in levels] + ([float(day1["low"].min()), float(day1["high"].max())] if not day1.empty else []) \
-        + ([float(proxy["low"].min()), float(proxy["high"].max())] if proxy is not None and not proxy.empty else [])
+    f_dt0, t_dt0 = U.chart_window(sess)
+    vis = day1[(day1.index >= f_dt0) & (day1.index <= t_dt0)] if day1 is not None and not day1.empty else day1
+    ys = [l["price"] for l in levels] + ([float(vis["low"].min()), float(vis["high"].max())] if vis is not None and not vis.empty else [])
     em = plan["grid"]["c12"]
-    title = f"SPX cash 1-minute ({spx_src or 'no feed'})" + (f" · overnight {proxy_src}" if proxy is not None else "") + ("" if locked else " · PROVISIONAL map")
+    title = f"{px_src or cfg['price_symbol']} · 1-minute · rules on {'the price feed' if cfg.get('rules_feed', '').startswith('Price') else 'SPX cash (SP:SPX)'}" + ("" if locked else " · PROVISIONAL map")
     st.caption(title)
     if cfg.get("engine", "TradingView lightweight").startswith("TradingView"):
-        html = LW.build(day1, proxy, levels, (f_dt, t_dt), markers, U.theme_name(), cfg.get("candles", False), 540,
-                        anchor=grid["C15"], lo=min(ys) - 0.1 * em, hi=max(ys) + 0.1 * em, proxy_name="SPX500 proxy")
+        html = LW.build(day1, None, levels, (f_dt, t_dt), markers, U.theme_name(), cfg.get("candles", False), 540,
+                        anchor=grid["C15"], lo=min(ys) - 0.1 * em, hi=max(ys) + 0.1 * em, proxy_name="")
         components.html(html, height=556, scrolling=False)
     else:
         fig = C.session_chart(day5, sess, grid, {"call_node": lv["call_node"], "put_node": lv["put_node"]},
                               {"call_fence": sg["call_fence"], "put_fence": sg["put_fence"]},
                               {"c39": gap["c39"], "c41": gap["c41"], "c42": gap["c42"]} if gap["active"] else None,
-                              spot=last, height=540, candles=cfg.get("candles", False), overnight=proxy, show_premarket=m < T_OPEN)
+                              spot=last, height=540, candles=cfg.get("candles", False), overnight=None, show_premarket=m < T_OPEN)
         st.plotly_chart(fig, use_container_width=True, key="desk_chart")
 
     # ── 3. one line each: gate verdict · scanner · card
@@ -167,8 +170,8 @@ def render(cfg, plan, label):
         else:
             st.caption("No regular-hours bars yet.")
     with st.expander("Feeds", expanded=False):
-        st.caption(f"SPX {plan['sources'].get('spx')} · VIX {plan['sources'].get('vix')} · /ES {plan['sources'].get('es')} · proxy {plan['inputs'].get('proxy_src', '—')} "
-                   f"(basis {plan['inputs'].get('proxy_basis', 0) or 0:+.2f}) · chain {plan['sources'].get('chain')}")
+        st.caption(f"Price feed {px_src or cfg['price_symbol']} · official SPX close {plan['sources'].get('spx')} · VIX {plan['sources'].get('vix')} · "
+                   f"/ES {plan['sources'].get('es')} · chain {plan['sources'].get('chain')}")
         st.caption(f"C5 {plan['notes'].get('c5', '')} · C6 {plan['notes'].get('c6', '')} · C7 {plan['notes'].get('c7', '')}")
         if last_spx is not None:
-            st.caption(f"Last SPX print {last_spx:,.2f} at {last_t}.")
+            st.caption(f"Last price print {last_spx:,.2f} at {last_t}.")

@@ -99,7 +99,8 @@ def configure_storage() -> None:
 # ── settings (sidebar, persisted in session_state) ────────────────────────────
 DEFAULTS = {"c8": 25000.0, "c9": 1.0, "c27": 8.0, "c28": 0.55, "vix_print": "08:15", "es_print": "08:20",
             "ov_c5": 0.0, "ov_c6": 0.0, "ov_c7": "", "c10": 0.0, "macro": "", "auto_refresh": True, "theme": "dark",
-            "candles": False, "overnight": True, "engine": "TradingView lightweight"}
+            "candles": False, "overnight": True, "engine": "TradingView lightweight", "poll": 60,
+            "price_symbol": "CAPITALCOM:SPX500", "rules_feed": "SPX cash 5-min (book)"}
 
 
 def settings() -> Dict:
@@ -115,7 +116,13 @@ def settings() -> Dict:
         st.number_input("C9  Max risk per trade (%)", min_value=0.1, max_value=10.0, step=0.1, key="set_c9")
         st.number_input("C27 Structural stop (SPX pts)", min_value=0.5, step=0.5, key="set_c27")
         st.number_input("C28 Option delta", min_value=0.05, max_value=1.0, step=0.05, key="set_c28")
+        st.text_input("Price feed (chart & live price)", key="set_price_symbol",
+                      help="24-hour feed drawn on the chart and used for the live price. SP:SPX is used only for the official prior close and settlement.")
+        st.radio("Rules engine runs on", ["SPX cash 5-min (book)", "Price feed 5-min"], key="set_rules_feed",
+                 help="The desk audit measures on the SPX index; switch if you want the scanner on the same feed as the chart.")
         st.radio("Chart", ["TradingView lightweight", "Plotly"], horizontal=True, key="set_engine")
+        st.slider("Poll feeds every (seconds)", min_value=30, max_value=300, step=15, key="set_poll",
+                  help="How often the page re-runs and pulls new 1-minute bars. 30 s is the practical floor on TradingView's anonymous feed.")
         st.checkbox("Candlesticks instead of closes line", key="set_candles")
         st.checkbox("Show /ES overnight (basis-adjusted) before the open", key="set_overnight")
         with st.expander("Feed timing · overrides", expanded=False):
@@ -144,27 +151,37 @@ def settings() -> Dict:
             "vix_print": st.session_state["set_vix_print"], "es_print": st.session_state["set_es_print"],
             "overrides": ov, "macro": st.session_state["set_macro"], "auto": st.session_state["set_auto_refresh"],
             "c10": st.session_state.get("c10_value"), "candles": bool(st.session_state.get("set_candles")),
-            "overnight": bool(st.session_state.get("set_overnight", True)), "engine": st.session_state.get("set_engine", "TradingView lightweight")}
+            "overnight": bool(st.session_state.get("set_overnight", True)), "engine": st.session_state.get("set_engine", "TradingView lightweight"),
+            "poll": int(st.session_state.get("set_poll", 60)),
+            "price_symbol": (st.session_state.get("set_price_symbol") or "CAPITALCOM:SPX500").strip().upper(),
+            "rules_feed": st.session_state.get("set_rules_feed", "SPX cash 5-min (book)")}
 
 
-def bucket(seconds: int = REFRESH_SECONDS) -> int:
-    return int(time.time() // seconds)
+def bucket(seconds: Optional[int] = None) -> int:
+    """Cache key that changes once per poll interval (the slider), so each poll fetches exactly once."""
+    s = seconds or int(st.session_state.get("set_poll", REFRESH_SECONDS))
+    return int(time.time() // max(s, 15))
 
 
 # ── cached feeds ──────────────────────────────────────────────────────────────
-@st.cache_data(ttl=REFRESH_SECONDS - 5, show_spinner=False)
+@st.cache_data(ttl=300, show_spinner=False)
 def bars(key: str, interval: str, n: int, _b: int) -> Tuple[Optional[pd.DataFrame], str]:
     return F.get_bars(key, interval, n, tv_creds())
 
 
-@st.cache_data(ttl=REFRESH_SECONDS - 5, show_spinner=False)
+@st.cache_data(ttl=300, show_spinner=False)
+def price_bars(ticker: str, interval: str, n: int, _b: int) -> Tuple[Optional[pd.DataFrame], str]:
+    return F.get_symbol_bars(ticker, interval, n, tv_creds())
+
+
+@st.cache_data(ttl=300, show_spinner=False)
 def build_plan(session_iso: str, vix_print: str, es_print: str, c8: float, c9: float, c27: float, c28: float,
                overrides_json: str, c10: Optional[float], _b: int) -> Dict:
     return P.build_plan(date.fromisoformat(session_iso), vix_print, es_print, c8, c9, c27, c28,
                         json.loads(overrides_json), tv_creds(), c10)
 
 
-@st.cache_data(ttl=REFRESH_SECONDS - 5, show_spinner=False)
+@st.cache_data(ttl=300, show_spinner=False)
 def chain(expiry: str, underlying: str, _b: int) -> Optional[pd.DataFrame]:
     return F.cboe_chain(expiry, underlying)
 
@@ -202,8 +219,8 @@ def proxy_overnight_spx(plan: Dict, session: date) -> Tuple[Optional[pd.DataFram
     SPX points by the prior-16:00 basis. Falls back to /ES when the CFD feeds give nothing."""
     from datetime import timedelta, time as dtime
     px1, src = bars("PROXY", "1", 1400, bucket())
-    basis = (plan.get("inputs") or {}).get("proxy_basis", 0.0) if plan.get("ok") else 0.0
-    if px1 is None or px1.empty:
+    basis = 0.0                                   # Capital.com SPX500 (and the CFD fallbacks) track the cash index directly
+    if px1 is None or px1.empty or "CME" in src:
         es = es_overnight_spx(plan, session)
         return es, "/ES (basis-adjusted)"
     start = datetime.combine(session - timedelta(days=1), dtime(18, 0), tzinfo=ET)
@@ -213,7 +230,7 @@ def proxy_overnight_spx(plan: Dict, session: date) -> Tuple[Optional[pd.DataFram
         return None, src
     for c in ("open", "high", "low", "close"):
         w[c] = w[c] - (basis or 0.0)
-    return w, f"{src} (basis {basis:+.2f})"
+    return w, src
 
 
 def es_overnight_spx(plan: Dict, session: date) -> Optional[pd.DataFrame]:
@@ -249,13 +266,14 @@ def _item(k, v, cls=""):
 
 
 def status_bar(plan: Dict, label: str, session: date) -> None:
-    spx1, _ = bars("SPX", "1", 800, bucket())
-    last, last_t = F.latest(spx1)
+    sym = (st.session_state.get("set_price_symbol") or "CAPITALCOM:SPX500").strip().upper()
+    px1, src = price_bars(sym, "1", 300, bucket())
+    last, last_t = F.latest(px1)
     i = plan.get("inputs", {}) if plan.get("ok") else {}
     c5 = i.get("c5")
     items = []
     if last is not None:
-        items.append(_item("SPX last", f"{last:,.2f}" + (f" <span class='k'>({last_t})</span>" if last_t else "")))
+        items.append(_item(src or sym, f"{last:,.2f}" + (f" <span class='k'>({last_t})</span>" if last_t else "")))
         if c5:
             chg = last - c5
             items.append(_item("vs C5", f"{chg:+.2f} ({chg / c5 * 100:+.2f}%)", "up" if chg >= 0 else "dn"))

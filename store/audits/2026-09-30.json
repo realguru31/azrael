@@ -1,0 +1,81 @@
+{
+ "session": "WEDNESDAY (SEP 30, 2026)",
+ "settlement": 7651.54,
+ "anchor": 7670.84,
+ "vix": 16.17,
+ "vix_print_time": "08:15",
+ "em": 78.13626969982182,
+ "c13": 7748.976269699822,
+ "c14": 7709.908134849911,
+ "c15": 7670.84,
+ "c16": 7631.771865150089,
+ "c17": 7592.703730300178,
+ "put_node": 7630.0,
+ "call_node": 7710.0,
+ "put_fence": 7575.0,
+ "call_fence": 7770.0,
+ "session_low": 7652.9,
+ "session_low_time": "15:55",
+ "session_high": 7722.88,
+ "session_high_time": "10:55",
+ "range_pts": 69.98,
+ "range_em": 0.9,
+ "inside_1sigma": true,
+ "inside_half": true,
+ "walls_tested": false,
+ "wall_tested_side": "",
+ "half_shelves_held": false,
+ "king_node_touched": "call node 7710",
+ "stops_run": [
+  "pre-market high 7710.80 taken out (session high 7722.88 at 10:55)",
+  "pre-market low 7659.70 taken out (session low 7652.90 at 15:55)",
+  "prior session high 7699.60 taken out (session high 7722.88 at 10:55)",
+  "prior session low 7653.55 taken out (session low 7652.90 at 15:55)",
+  "round hundred 7700 traded through"
+ ],
+ "settle_zone": "between C16 and C15",
+ "regime": 2,
+ "replay": {
+  "archetype": 2,
+  "qualified": true,
+  "side": "short",
+  "trigger_time": "10:40",
+  "entry": 7706.36,
+  "stop": 7715.0,
+  "target": 7699.495,
+  "risk_pts": 8.64,
+  "resolution": "stopped",
+  "exit_time": "10:45",
+  "exit_price": 7715.71,
+  "pnl_pts": -9.35,
+  "r_multiple": -1.08,
+  "best_excursion": 0.63,
+  "trigger_text": "SPX rose 21.01 pts into the call node 7710; the 10:40 bar (high 7713.02) closed back below it at 7706.36 with an upper wick of 6.26 pts on a 10.20-pt range. Long puts; target half the rise back (7699.49).",
+  "invalidation_text": "A 5-minute close above 7715 (node + 5) or two closes above 7710. Planned risk 8.64 pts = 1R.",
+  "resolution_text": "Stopped: the 10:45 bar closed at 7715.71, -9.35 pts (-1.08R on the index). The stop is a 5-minute close, so the exit overshot the planned 1R by 0.08R. Best excursion before the exit: 0.63 pts in favor.",
+  "not_qualified_reason": "",
+  "extra": {}
+ },
+ "also_checked": [
+  "Not eligible at VIX 16.17: Archetype 1 (needs VIX under 15).",
+  "Archetype 3 also qualified later (10:50) \u2014 one setup per session, the earlier trigger stands.",
+  "Not eligible at VIX 16.17: Archetype 4 (needs VIX above 18.5)."
+ ],
+ "lesson": "In a Balanced Gamma (Two-Way Auction) regime (structural interpretation), the session used 0.90 EM of range (69.98 pts) and settled inside the 1-sigma envelope. The 10:40 Archetype 2 trigger ran 0.63 pts before the stop, and the close-based stop gave up 0.08R beyond plan.",
+ "proxies": [
+  {
+   "name": "SPY",
+   "settle": 765.55,
+   "band_lo": 756.4157498651251,
+   "band_hi": 771.984250134875,
+   "em": 7.784250134874908
+  },
+  {
+   "name": "/ES",
+   "settle": 7747.75,
+   "band_lo": 7653.48819928633,
+   "band_hi": 7811.01180071367,
+   "em": 78.76180071366986
+  }
+ ]
+}

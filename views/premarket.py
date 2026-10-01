@@ -117,7 +117,12 @@ def render(cfg, plan, label):
                 st.caption(f"Air-pocket check (Archetype 4): OI between C14 and C13 = {ap['up']['oi_between']:,.0f} ({ap['up']['share_of_chain']:.1f} % of the chain); "
                            f"between C16 and C17 = {ap['down']['oi_between']:,.0f} ({ap['down']['share_of_chain']:.1f} %).")
         else:
-            st.caption("CBOE chain unavailable — the node map shows the model shape only.")
+            st.caption("Chain unavailable — the node map shows the model shape only.")
+        if plan.get("vol_node"):
+            v = plan["vol_node"]
+            st.markdown(f"**Volume node (today's 0DTE flow, live proxy):** largest combined volume within 1 EM at **{v['strike']:,.0f}** "
+                        f"({v['total_volume']:,.0f} = C {v['c_volume']:,.0f} / P {v['p_volume']:,.0f}; {v['chain_volume']:,.0f} contracts traded within 1 EM so far).")
+        st.caption(f"Chain source: {U.chain_note()} · expiry {exp}")
         if prof is not None and not prof.empty:
             st.plotly_chart(C.gex_chart(prof, {"C13": g["c13"], "C14": g["c14"], "C15": g["c15"], "C16": g["c16"], "C17": g["c17"]}, None),
                             use_container_width=True, key="gex")

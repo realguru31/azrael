@@ -98,6 +98,7 @@ def build_plan(session: date, vix_print: str = "08:15", es_print: str = "08:20",
     # Live chain (CBOE, delayed) — the book's OI King Node and the air-pocket check
     chain = F.get_chain(session.isoformat(), "SPX")
     oi_node = CH.oi_king_node(chain, g.c15, g.c12) if chain is not None else None
+    vol_node = CH.volume_king_node(chain, g.c15, g.c12) if chain is not None else None
     air_up = CH.air_pocket(chain, g.c14, g.c13) if chain is not None else None
     air_dn = CH.air_pocket(chain, g.c16, g.c17) if chain is not None else None
 
@@ -117,7 +118,7 @@ def build_plan(session: date, vix_print: str = "08:15", es_print: str = "08:20",
         "c22": ws.c22(c6), "c23": ws.c23(c7), "c24": ws.c24(c6), "character": ws.regime_character(c6),
         "eligible": ws.eligible_archetypes(c6), "sizing": sizing.as_dict(), "gap": gap.as_dict(),
         "strike_grid": sg.as_dict(), "beyond": ladder, "expiries": [e.isoformat() for e in exps],
-        "spy": spy_grid, "es": es_grid, "oi_node": oi_node, "air_pocket": {"up": air_up, "down": air_dn},
+        "spy": spy_grid, "es": es_grid, "oi_node": oi_node, "vol_node": vol_node, "air_pocket": {"up": air_up, "down": air_dn},
         "sources": {"spx": spx_src, "vix": vix_src, "price": px_src, "spy": spy_src,
                     "chain": F.chain_source()["note"]},
         "sanity": ws.sanity_check(g),

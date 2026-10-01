@@ -83,11 +83,15 @@ def render(cfg, plan, label):
         {"price": grid["C15"], "color": "#a7b1bd", "style": 0, "title": "anchor C15", "width": 2},
         {"price": grid["C16"], "color": "#ff9d2e", "style": 2, "title": "−0.5 shelf C16"},
         {"price": grid["C17"], "color": "#3d8bff", "style": 1, "title": "−1.0 wall C17"},
-        {"price": lv["call_node"], "color": "#b06cff", "style": 1, "title": "call node"},
-        {"price": lv["put_node"], "color": "#b06cff", "style": 1, "title": "put node"},
+        {"price": lv["call_node"], "color": "#b06cff", "style": 1, "title": "Call King Node", "width": 2},
+        {"price": lv["put_node"], "color": "#b06cff", "style": 1, "title": "Put King Node", "width": 2},
         {"price": sg["call_fence"], "color": "#e3b600", "style": 4, "title": "call fence"},
         {"price": sg["put_fence"], "color": "#e3b600", "style": 4, "title": "put fence"},
     ]
+    if plan.get("oi_node"):
+        levels.append({"price": plan["oi_node"]["strike"], "color": "#22d3ee", "style": 2, "title": f"OI King Node (book) {plan['oi_node']['total_oi']:,.0f} OI"})
+    if plan.get("vol_node") and plan["vol_node"]["total_volume"] > 0:
+        levels.append({"price": plan["vol_node"]["strike"], "color": "#67e8f9", "style": 4, "title": f"Volume node {plan['vol_node']['total_volume']:,.0f}"})
     sc = plan.get("stop_clusters", {})
     for nm, k in (("pre-mkt high", "pre_market_high"), ("pre-mkt low", "pre_market_low"), ("prior high", "prior_session_high"), ("prior low", "prior_session_low")):
         if sc.get(k):
@@ -172,7 +176,12 @@ def render(cfg, plan, label):
             st.caption("No regular-hours bars yet.")
     with st.expander("Feeds", expanded=False):
         st.caption(f"Price feed {px_src or cfg['price_symbol']} · official SPX close {plan['sources'].get('spx')} · VIX {plan['sources'].get('vix')} · "
-                   f"options chain {plan['sources'].get('chain')} · {st.session_state.get('bc_secret_status', '')}")
+                   f"options chain {plan['sources'].get('chain')}")
+        try:
+            from data import barchart as _BC
+            st.caption(f"Barchart cookies: {_BC.cookie_source()}")
+        except Exception:
+            pass
         st.caption(f"C5 {plan['notes'].get('c5', '')} · C6 {plan['notes'].get('c6', '')} · C7 {plan['notes'].get('c7', '')}")
         if last_spx is not None:
             st.caption(f"Last price print {last_spx:,.2f} at {last_t}.")

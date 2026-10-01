@@ -125,6 +125,11 @@ def _cookies():
     return None
 
 
+def cookie_source() -> str:
+    blob = _cookies()
+    return str(blob.get("_path", "?")) if blob else "none"
+
+
 def cookie_age_min() -> Optional[float]:
     blob = _cookies()
     return blob.get("_age_min") if blob else None

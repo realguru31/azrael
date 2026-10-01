@@ -39,6 +39,25 @@ def oi_king_node(chain: pd.DataFrame, anchor: float, em: float, tie_band_pct: fl
     }
 
 
+def volume_king_node(chain: Optional[pd.DataFrame], c15: float, em: float) -> Optional[Dict]:
+    """Live-flow proxy: the strike with the largest combined 0DTE VOLUME within ±1 EM of the anchor (the Pine
+    indicator's cumulative-volume proxy). Thin before 09:30, meaningful after. Tie-break: nearer the close wins."""
+    if chain is None or chain.empty or "total_volume" not in chain:
+        return None
+    w = chain[(chain["strike"] >= c15 - em) & (chain["strike"] <= c15 + em)].copy()
+    if w.empty or w["total_volume"].max() <= 0:
+        return None
+    best = float(w["total_volume"].max())
+    cands = w[w["total_volume"] >= best * 0.9].copy()
+    cands["dist"] = (cands["strike"] - c15).abs()
+    r = cands.sort_values(["dist", "total_volume"], ascending=[True, False]).iloc[0]
+    top = w.sort_values("total_volume", ascending=False).head(5)
+    return {"strike": float(r["strike"]), "total_volume": int(r["total_volume"]), "c_volume": int(r.get("c_volume", 0)),
+            "p_volume": int(r.get("p_volume", 0)), "chain_volume": int(w["total_volume"].sum()),
+            "top": [{"strike": float(t["strike"]), "total_volume": int(t["total_volume"]), "c_volume": int(t.get("c_volume", 0)),
+                     "p_volume": int(t.get("p_volume", 0))} for _, t in top.iterrows()]}
+
+
 def gex_profile(chain: pd.DataFrame, anchor: float, em: float, mult: float = 1.5) -> pd.DataFrame:
     band = within_em(chain, anchor, em, mult)
     if band is None or band.empty:

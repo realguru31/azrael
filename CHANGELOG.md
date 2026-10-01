@@ -1,6 +1,19 @@
 # Changelog
 All notable changes to the Azraël Desk app. Format: Keep a Changelog; versions are semantic.
 
+## [1.1.1] — 2026-10-01
+### Changed
+- Chart labels read "Call King Node / Put King Node" (desk definition, ±0.5 EM). The OI King Node (Barchart book) and the
+  volume node (today's flow) are drawn on the Desk chart in cyan when the chain is available.
+- Files: `views/desk.py`.
+
+## [1.1.0] — 2026-10-01
+### Added
+- Volume King Node: the strike with today's largest combined 0DTE volume within ±1 EM (live-flow proxy, the Pine
+  indicator's method), shown on the Premarket page next to the OI node; chain source and expiry stated there too.
+- Feeds expander shows which cookie source Barchart is using (file path or URL) instead of the secret note.
+- Files: `data/chain.py`, `core/plan.py`, `data/barchart.py`, `views/premarket.py`, `views/desk.py`.
+
 ## [1.0.5] — 2026-10-01
 ### Changed
 - With no secrets set, the cookie loader now reads the public spxdash mint file

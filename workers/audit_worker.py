@@ -4,14 +4,15 @@ import os, sys
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from core import audit as AU, plan as P, rules as R
 from data import fetcher as F, storage as S
-from utils.timeutil import now_et, is_trading_day, fmt_session_title
+from utils.timeutil import now_et, is_trading_day, fmt_session_title, prev_trading_day
 
 def main():
     now = now_et(); sess = now.date()
-    if not is_trading_day(sess):
-        print("not a trading day"); return
-    if now.hour * 60 + now.minute < 16 * 60 + 15:        # DST guard: skip the cron that lands before the 16:15 review
-        print(f"skip: {now:%H:%M} ET is before settlement"); return
+    if not is_trading_day(sess) or now.hour * 60 + now.minute < 16 * 60 + 15:
+        # before the 16:15 review (or on a weekend/holiday) audit the last completed session instead — this is what a
+        # manual 'Run workflow' at 03:00 should do; the 16:20 schedule audits today
+        sess = prev_trading_day(sess)
+        print(f"{now:%H:%M} ET is before today's settlement — auditing the last completed session {sess}")
     creds = (os.environ.get("TV_USERNAME"), os.environ.get("TV_PASSWORD")); creds = creds if all(creds) else None
     base = S.load_baseline(sess.isoformat())
     if not base or not base.get("ok"):

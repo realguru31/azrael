@@ -112,7 +112,7 @@ def build_plan(session: date, vix_print: str = "08:15", es_print: str = "08:20",
     es_grid = ws.proxy_grid("/ES", es_print_px, c6, 5.0).as_dict() if es_print_px else None
 
     # Live chain (CBOE, delayed) — the book's OI King Node and the air-pocket check
-    chain = F.cboe_chain(session.isoformat(), "SPX")
+    chain = F.get_chain(session.isoformat(), "SPX")
     oi_node = CH.oi_king_node(chain, g.c15, g.c12) if chain is not None else None
     air_up = CH.air_pocket(chain, g.c14, g.c13) if chain is not None else None
     air_dn = CH.air_pocket(chain, g.c16, g.c17) if chain is not None else None
@@ -135,7 +135,7 @@ def build_plan(session: date, vix_print: str = "08:15", es_print: str = "08:20",
         "strike_grid": sg.as_dict(), "beyond": ladder, "expiries": [e.isoformat() for e in exps],
         "spy": spy_grid, "es": es_grid, "oi_node": oi_node, "air_pocket": {"up": air_up, "down": air_dn},
         "sources": {"spx": spx_src, "vix": vix_src, "es": es_src, "spy": spy_src,
-                    "chain": "CBOE delayed" if chain is not None else "unavailable"},
+                    "chain": F.chain_source()["note"]},
         "sanity": ws.sanity_check(g),
     }
 

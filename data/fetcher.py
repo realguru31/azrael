@@ -239,6 +239,61 @@ def _f(v) -> float:
         return 0.0
 
 
+_chain_source = {"src": "none", "note": "unavailable"}
+
+
+def aggregate_rows(df: pd.DataFrame) -> Optional[pd.DataFrame]:
+    """Flat contract rows -> one row per strike (c_* / p_*). Roots at the same strike aggregate: OI and volume summed,
+    prices and greeks OI-weighted (plain mean when the strike has no OI)."""
+    if df is None or df.empty:
+        return None
+    out = []
+    for strike, g in df.groupby("strike"):
+        row = {"strike": float(strike)}
+        for side in ("c", "p"):
+            s = g[g["type"] == side]
+            if s.empty:
+                for f in ("oi", "volume", "iv", "delta", "gamma", "vega", "theta", "bid", "ask", "last", "mark"):
+                    row[f"{side}_{f}"] = 0.0
+                continue
+            w = s["oi"].astype(float).values
+            ws = w.sum()
+            row[f"{side}_oi"] = int(s["oi"].sum())
+            row[f"{side}_volume"] = int(s["volume"].sum())
+            for f in ("iv", "delta", "gamma", "vega", "theta", "bid", "ask", "last", "mark"):
+                v = s[f].astype(float).values
+                row[f"{side}_{f}"] = float(np.average(v, weights=w)) if ws > 0 else float(v.mean())
+        out.append(row)
+    res = pd.DataFrame(out).sort_values("strike").reset_index(drop=True)
+    res["total_oi"] = res["c_oi"] + res["p_oi"]
+    res["total_volume"] = res["c_volume"] + res["p_volume"]
+    return res
+
+
+def get_chain(expiry: str, underlying: str = "SPX") -> Optional[pd.DataFrame]:
+    """Barchart (live, minted WAF cookies) first for SPX; CBOE delayed quotes otherwise or on any failure."""
+    global _chain_source
+    if underlying == "SPX" and not DEMO:
+        try:
+            from data import barchart as BC
+            rows = BC.get_rows(expiry, "$SPX")
+            if rows is not None and not rows.empty:
+                agg = aggregate_rows(rows)
+                if agg is not None and not agg.empty:
+                    age = BC.cookie_age_min()
+                    _chain_source = {"src": "barchart", "note": f"Barchart live (cookies {age:.0f} min old)" if age is not None else "Barchart live"}
+                    return agg
+        except Exception as e:
+            logger.info("barchart path failed: %s", e)
+    df = cboe_chain(expiry, underlying)
+    _chain_source = {"src": "cboe", "note": "CBOE delayed ~15 min"} if df is not None else {"src": "none", "note": "unavailable"}
+    return df
+
+
+def chain_source() -> Dict[str, str]:
+    return dict(_chain_source)
+
+
 def cboe_chain(expiry: str, underlying: str = "SPX") -> Optional[pd.DataFrame]:
     """One row per strike for one expiry, normalised schema (c_* / p_*). SPX and SPXW roots aggregated:
     OI and volume summed, prices and greeks OI-weighted."""
@@ -263,28 +318,7 @@ def cboe_chain(expiry: str, underlying: str = "SPX") -> Optional[pd.DataFrame]:
         })
     if not rows:
         return None
-    df = pd.DataFrame(rows)
-    out = []
-    for strike, g in df.groupby("strike"):
-        row = {"strike": float(strike)}
-        for side in ("c", "p"):
-            s = g[g["type"] == side]
-            if s.empty:
-                for f in ("oi", "volume", "iv", "delta", "gamma", "vega", "theta", "bid", "ask", "last", "mark"):
-                    row[f"{side}_{f}"] = 0.0
-                continue
-            w = s["oi"].astype(float).values
-            ws = w.sum()
-            row[f"{side}_oi"] = int(s["oi"].sum())
-            row[f"{side}_volume"] = int(s["volume"].sum())
-            for f in ("iv", "delta", "gamma", "vega", "theta", "bid", "ask", "last", "mark"):
-                v = s[f].astype(float).values
-                row[f"{side}_{f}"] = float(np.average(v, weights=w)) if ws > 0 else float(v.mean())
-        out.append(row)
-    res = pd.DataFrame(out).sort_values("strike").reset_index(drop=True)
-    res["total_oi"] = res["c_oi"] + res["p_oi"]
-    res["total_volume"] = res["c_volume"] + res["p_volume"]
-    return res
+    return aggregate_rows(pd.DataFrame(rows))
 
 
 def cboe_underlying(underlying: str = "SPX") -> Dict[str, Optional[float]]:

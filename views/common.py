@@ -183,7 +183,11 @@ def build_plan(session_iso: str, vix_print: str, es_print: str, c8: float, c9: f
 
 @st.cache_data(ttl=300, show_spinner=False)
 def chain(expiry: str, underlying: str, _b: int) -> Optional[pd.DataFrame]:
-    return F.cboe_chain(expiry, underlying)
+    return F.get_chain(expiry, underlying)
+
+
+def chain_note() -> str:
+    return F.chain_source()["note"]
 
 
 def get_plan(cfg: Dict) -> Tuple[Dict, str]:

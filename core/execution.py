@@ -183,7 +183,8 @@ def credit_line(plan: Dict, chain: Optional[pd.DataFrame]) -> str:
         head = "DIRECTIONAL SPREAD ONLY (condors banned, 0.5R, 15–20 wide): "
         body = leg(bc, "bear call") + " or " + leg(bp, "bull put")
         tail = " · do not sell unhedged gamma on an out-of-bounds gap."
-    return head + body + f" · {fence_txt}" + tail + (" (mids: CBOE delayed)" if chain is not None else " (no chain mids)")
+    from data import fetcher as _F
+    return head + body + f" · {fence_txt}" + tail + (f" (mids: {_F.chain_source()['note']})" if chain is not None else " (no chain mids)")
 
 
 def banner(plan: Dict, lv: Dict[str, float], bars: pd.DataFrame, last: Optional[float], now_min: int, gate, live: Optional[Dict],

@@ -65,6 +65,7 @@ def render(cfg, plan, label):
             st.write(f"MEIC condor: credit {c['credit']:.2f} · max loss/contract ${c['max_loss_per_contract']:,.0f} · contracts {c['contracts_1r']} · max gain/contract ${c['max_gain_per_contract']:,.0f}")
         elif proto["single_sided_only"]:
             st.caption("Single-sided only in this regime (or condors banned).")
+        st.caption(f"Chain source: {U.chain_note()}.")
         if ch is None:
             st.caption("Chain unavailable — strikes shown, no mids.")
         st.markdown("**Manual sizing check**")

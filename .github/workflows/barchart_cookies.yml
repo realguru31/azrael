@@ -1,0 +1,33 @@
+name: Barchart cookie mint
+on:
+  schedule:
+    # every 30 min, 13:00–21:30 UTC weekdays (covers pre-market and RTH in both EDT and EST)
+    - cron: '0,30 12,13,14,15,16,17,18,19,20,21 * * 1-5'
+  workflow_dispatch:
+concurrency:
+  group: barchart-cookies
+  cancel-in-progress: false
+jobs:
+  mint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install Playwright
+        run: |
+          pip install -q playwright pandas
+          playwright install-deps chromium
+          playwright install chromium
+      - name: Mint cookies
+        run: python data/barchart.py --mint
+      - name: Commit
+        run: |
+          git config user.name "Desk Bot"
+          git config user.email "bot@users.noreply.github.com"
+          git add store/session/
+          if git diff --cached --quiet; then echo "no change"; else
+            git commit -m "🔑 Barchart cookies $(date -u +'%Y-%m-%d %H:%M UTC')"
+            git fetch origin main && git rebase origin/main && git push origin main
+          fi

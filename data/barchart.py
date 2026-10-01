@@ -2,7 +2,7 @@
 Only used when store/session/cookies.json exists (minted by `python data/barchart.py --mint` in CI with Playwright).
 The app never requires it: fetcher.cboe_chain is the default chain source. To enable: add curl_cffi>=0.7.0 to
 requirements.txt, create a cookie-mint workflow (every 30 min, weekdays), and call get_chain() before the CBOE path."""
-import json, os, time, logging
+import json, os, sys, time, logging
 from typing import Optional
 import pandas as pd
 logger = logging.getLogger(__name__)
@@ -27,38 +27,54 @@ def _cookies():
     except Exception:
         return None
 
-def get_chain(expiry: str) -> Optional[pd.DataFrame]:
-    """Normalised per-strike frame like fetcher.cboe_chain, or None (caller falls back to CBOE)."""
+def cookie_age_min() -> Optional[float]:
+    blob = _cookies()
+    return (time.time() - blob.get("minted_at", 0)) / 60 if blob else None
+
+
+def get_rows(expiry: str, base_symbol: str = "$SPX") -> Optional[pd.DataFrame]:
+    """Flat contract rows for one expiry in the fetcher schema (strike, type c/p, root, oi, volume, iv, greeks, bid, ask,
+    last, mark), or None on any failure so the caller falls back to CBOE. orderDir=desc keeps ATM inside the 1000-row cap."""
     blob = _cookies()
     if not blob:
         return None
     try:
         from curl_cffi import requests as creq
+    except ImportError:
+        logger.warning("curl_cffi not installed — Barchart unavailable"); return None
+    try:
         s = creq.Session(impersonate="chrome120")
-        r = s.get(BC_API, params={"baseSymbol": "$SPX", "groupBy": "optionType", "expirationDate": expiry, "orderBy": "strikePrice",
-                                  "orderDir": "desc", "raw": "1", "fields": FIELDS}, cookies=blob["cookies"], headers=_headers(blob.get("user_agent", UA)), timeout=20)
+        r = s.get(BC_API, params={"baseSymbol": base_symbol, "groupBy": "optionType", "expirationDate": expiry, "orderBy": "strikePrice",
+                                  "orderDir": "desc", "raw": "1", "fields": FIELDS}, cookies=blob["cookies"],
+                  headers=_headers(blob.get("user_agent", UA)), timeout=20)
         if r.status_code != 200:
-            return None
+            logger.warning("Barchart %s — falling back to CBOE", r.status_code); return None
         data = r.json().get("data") or {}
     except Exception as e:
-        logger.warning("barchart: %s", e); return None
-    rows = {}
-    for side, opts in data.items():
-        px = "c" if side.lower().startswith("c") else "p"
-        for o in opts or []:
-            rec = o.get("raw", o); k = float(rec.get("strikePrice") or 0)
-            row = rows.setdefault(k, {"strike": k})
+        logger.warning("Barchart request failed: %s", e); return None
+    rows = []
+    for side, opts in (data.items() if isinstance(data, dict) else []):
+        if not isinstance(opts, list):
+            continue
+        px = "c" if str(side).lower().startswith("c") else "p"
+        for o in opts:
+            rec = o.get("raw", o) if isinstance(o, dict) else None
+            if not isinstance(rec, dict):
+                continue
             bid, ask, last = float(rec.get("bidPrice") or 0), float(rec.get("askPrice") or 0), float(rec.get("lastPrice") or 0)
-            vol = float(rec.get("volatility") or 0); vol = vol / 100 if vol > 3 else vol
-            row.update({f"{px}_oi": int(rec.get("openInterest") or 0), f"{px}_volume": int(rec.get("volume") or 0), f"{px}_iv": vol,
-                        f"{px}_delta": float(rec.get("delta") or 0), f"{px}_gamma": float(rec.get("gamma") or 0), f"{px}_vega": float(rec.get("vega") or 0),
-                        f"{px}_theta": float(rec.get("theta") or 0), f"{px}_bid": bid, f"{px}_ask": ask, f"{px}_last": last,
-                        f"{px}_mark": round((bid + ask) / 2, 2) if bid > 0 and ask > 0 else last})
+            rows.append({"strike": float(rec.get("strikePrice") or 0), "type": px, "root": "BC",
+                         "oi": int(float(rec.get("openInterest") or 0)), "volume": int(float(rec.get("volume") or 0)),
+                         "iv": float(rec.get("volatility") or 0), "delta": float(rec.get("delta") or 0), "gamma": float(rec.get("gamma") or 0),
+                         "vega": float(rec.get("vega") or 0), "theta": float(rec.get("theta") or 0), "bid": bid, "ask": ask, "last": last,
+                         "mark": round((bid + ask) / 2, 2) if (bid > 0 and ask > 0) else last})
     if not rows:
-        return None
-    df = pd.DataFrame(list(rows.values())).fillna(0).sort_values("strike").reset_index(drop=True)
-    df["total_oi"] = df.get("c_oi", 0) + df.get("p_oi", 0); df["total_volume"] = df.get("c_volume", 0) + df.get("p_volume", 0)
+        logger.warning("Barchart: no contracts for %s", expiry); return None
+    df = pd.DataFrame(rows)
+    nz = df["iv"][df["iv"] > 0]
+    if len(nz) and nz.median() > 1:          # normalise IV to a decimal at the boundary
+        df["iv"] = df["iv"] / 100.0
     return df
+
 
 async def _mint_async():
     from playwright.async_api import async_playwright

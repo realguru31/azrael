@@ -99,7 +99,7 @@ def configure_storage() -> None:
 # ── settings (sidebar, persisted in session_state) ────────────────────────────
 DEFAULTS = {"c8": 25000.0, "c9": 1.0, "c27": 8.0, "c28": 0.55, "vix_print": "08:15", "es_print": "08:20",
             "ov_c5": 0.0, "ov_c6": 0.0, "ov_c7": "", "c10": 0.0, "macro": "", "auto_refresh": True, "theme": "dark",
-            "candles": False, "overnight": True}
+            "candles": False, "overnight": True, "engine": "TradingView lightweight"}
 
 
 def settings() -> Dict:
@@ -115,6 +115,7 @@ def settings() -> Dict:
         st.number_input("C9  Max risk per trade (%)", min_value=0.1, max_value=10.0, step=0.1, key="set_c9")
         st.number_input("C27 Structural stop (SPX pts)", min_value=0.5, step=0.5, key="set_c27")
         st.number_input("C28 Option delta", min_value=0.05, max_value=1.0, step=0.05, key="set_c28")
+        st.radio("Chart", ["TradingView lightweight", "Plotly"], horizontal=True, key="set_engine")
         st.checkbox("Candlesticks instead of closes line", key="set_candles")
         st.checkbox("Show /ES overnight (basis-adjusted) before the open", key="set_overnight")
         with st.expander("Feed timing · overrides", expanded=False):
@@ -143,7 +144,7 @@ def settings() -> Dict:
             "vix_print": st.session_state["set_vix_print"], "es_print": st.session_state["set_es_print"],
             "overrides": ov, "macro": st.session_state["set_macro"], "auto": st.session_state["set_auto_refresh"],
             "c10": st.session_state.get("c10_value"), "candles": bool(st.session_state.get("set_candles")),
-            "overnight": bool(st.session_state.get("set_overnight", True))}
+            "overnight": bool(st.session_state.get("set_overnight", True)), "engine": st.session_state.get("set_engine", "TradingView lightweight")}
 
 
 def bucket(seconds: int = REFRESH_SECONDS) -> int:
@@ -179,6 +180,40 @@ def get_plan(cfg: Dict) -> Tuple[Dict, str]:
         plan = P.rebuild_from_inputs(plan, cfg["c8"], cfg["c9"], cfg["c27"], cfg["c28"], cfg.get("c10"))
         plan["live_inputs"] = live.get("inputs", {})
     return plan, label
+
+
+def chart_window(session: date) -> Tuple[datetime, datetime]:
+    """Rolling 12 hours ending one hour ahead of now until the open; then pre-market + the whole session; after the
+    close, the session alone."""
+    from datetime import timedelta, time as dtime
+    now = now_et()
+    if session != now.date():
+        return datetime.combine(session, dtime(9, 25), tzinfo=ET), datetime.combine(session, dtime(16, 5), tzinfo=ET)
+    m = minutes_of(now)
+    if m < 9 * 60 + 30:
+        return now - timedelta(hours=11), now + timedelta(hours=1)
+    if m < 16 * 60 + 5:
+        return datetime.combine(session, dtime(7, 30), tzinfo=ET), datetime.combine(session, dtime(16, 5), tzinfo=ET)
+    return datetime.combine(session, dtime(9, 25), tzinfo=ET), datetime.combine(session, dtime(16, 5), tzinfo=ET)
+
+
+def proxy_overnight_spx(plan: Dict, session: date) -> Tuple[Optional[pd.DataFrame], str]:
+    """Capital.com SPX500 (or the next proxy that answers) from 18:00 the prior evening to the open, shifted onto
+    SPX points by the prior-16:00 basis. Falls back to /ES when the CFD feeds give nothing."""
+    from datetime import timedelta, time as dtime
+    px1, src = bars("PROXY", "1", 1400, bucket())
+    basis = (plan.get("inputs") or {}).get("proxy_basis", 0.0) if plan.get("ok") else 0.0
+    if px1 is None or px1.empty:
+        es = es_overnight_spx(plan, session)
+        return es, "/ES (basis-adjusted)"
+    start = datetime.combine(session - timedelta(days=1), dtime(18, 0), tzinfo=ET)
+    end = datetime.combine(session, dtime(9, 30), tzinfo=ET)
+    w = px1[(px1.index >= start) & (px1.index < end)].copy()
+    if w.empty:
+        return None, src
+    for c in ("open", "high", "low", "close"):
+        w[c] = w[c] - (basis or 0.0)
+    return w, f"{src} (basis {basis:+.2f})"
 
 
 def es_overnight_spx(plan: Dict, session: date) -> Optional[pd.DataFrame]:

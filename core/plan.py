@@ -73,12 +73,19 @@ def build_plan(session: date, vix_print: str = "08:15", es_print: str = "08:20",
     else:
         notes["c7"] = "unavailable"
     on_hi, on_lo = F.overnight_range(es1, session)
+    px1, px_src = F.get_bars("PROXY", "1", 1400, creds)
+    px_hi, px_lo = F.overnight_range(px1, session)
     # convert the /ES overnight range to SPX points with the prior-16:00 basis (ES at the prior cash close minus C5)
     prev_sess = prev_trading_day(session)
     es_1600_prev, _ = F.print_at(es1, prev_sess, 16, 0)
     basis = (es_1600_prev - c5) if (es_1600_prev and c5) else (es_settle - c5 if (es_settle and c5) else None)
     pm_hi = (on_hi - basis) if (on_hi is not None and basis is not None) else None
     pm_lo = (on_lo - basis) if (on_lo is not None and basis is not None) else None
+    # proxy (Capital.com SPX500 CFD) basis at the prior 16:00 — usually a few points; used to shift the proxy line onto SPX
+    px_1600_prev, _ = F.print_at(px1, prev_sess, 16, 0)
+    proxy_basis = (px_1600_prev - c5) if (px_1600_prev and c5) else 0.0
+    if px_hi is not None and px_lo is not None:
+        pm_hi, pm_lo = px_hi - proxy_basis, px_lo - proxy_basis
     # prior session high / low (SPX daily bar)
     spx_d, _ = F.daily("SPX", 8, creds)
     prev_hi = prev_lo = None
@@ -113,7 +120,8 @@ def build_plan(session: date, vix_print: str = "08:15", es_print: str = "08:20",
         "inputs": {"c5": c5, "c6": c6, "c7": c7, "c8": c8, "c9": c9, "c10": gap.c10, "c27": c27, "c28": c28,
                    "vix_print": vix_print, "es_print": es_print, "es_print_px": es_print_px, "es_settle": es_settle,
                    "vix_live": vix_live, "es_live": es_live, "on_high": on_hi, "on_low": on_lo, "spy_c5": spy_c5,
-                   "es_basis": basis, "pm_high_spx": pm_hi, "pm_low_spx": pm_lo, "prev_high": prev_hi, "prev_low": prev_lo},
+                   "es_basis": basis, "pm_high_spx": pm_hi, "pm_low_spx": pm_lo, "prev_high": prev_hi, "prev_low": prev_lo,
+                   "proxy_basis": proxy_basis, "proxy_src": px_src},
         "stop_clusters": {"pre_market_high": pm_hi, "pre_market_low": pm_lo, "prior_session_high": prev_hi,
                           "prior_session_low": prev_lo,
                           "round_hundreds": [h for h in range(int(g.c17 // 100 + 1) * 100, int(g.c13 // 100) * 100 + 1, 100)]},

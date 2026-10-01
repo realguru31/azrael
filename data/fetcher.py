@@ -36,6 +36,8 @@ SYMBOLS = {
     "ES": [("CME_MINI", "ES1!"), ("CME_MINI", "ESZ2026"), ("OANDA", "SPX500USD"), ("FOREXCOM", "SPX500")],
     "SPY": [("AMEX", "SPY"), ("NYSE", "SPY"), ("BATS", "SPY")],
     "QQQ": [("NASDAQ", "QQQ"), ("BATS", "QQQ")],
+    # 24-hour price proxy for the pre-market chart: Capital.com's S&P 500 CFD tracks the cash index most closely
+    "PROXY": [("CAPITALCOM", "SPX500"), ("CAPITALCOM", "US500"), ("OANDA", "SPX500USD"), ("FOREXCOM", "SPX500"), ("CME_MINI", "ES1!")],
 }
 CBOE_URL = "https://cdn.cboe.com/api/global/delayed_quotes/options/{sym}.json"
 _OCC = re.compile(r"^([A-Z]+)(\d{6})([CP])(\d{8})$")
@@ -278,9 +280,9 @@ def cboe_underlying(underlying: str = "SPX") -> Dict[str, Optional[float]]:
 # ═════════════════════════════ demo data (offline) ═════════════════════════════
 def demo_bars(key: str, interval: str, n: int) -> pd.DataFrame:
     """Deterministic synthetic bars so the app renders with no network (AZRAEL_DEMO=1)."""
-    rng = np.random.default_rng({"SPX": 1, "VIX": 2, "ES": 3, "SPY": 4, "QQQ": 5}[key])
-    base = {"SPX": 7670.84, "VIX": 16.11, "ES": 7731.5, "SPY": 764.2, "QQQ": 742.0}[key]
-    vol = {"SPX": 0.9, "VIX": 0.03, "ES": 0.9, "SPY": 0.09, "QQQ": 0.1}[key]
+    rng = np.random.default_rng({"SPX": 1, "VIX": 2, "ES": 3, "SPY": 4, "QQQ": 5, "PROXY": 6}[key])
+    base = {"SPX": 7670.84, "VIX": 16.11, "ES": 7731.5, "SPY": 764.2, "QQQ": 742.0, "PROXY": 7672.0}[key]
+    vol = {"SPX": 0.9, "VIX": 0.03, "ES": 0.9, "SPY": 0.09, "QQQ": 0.1, "PROXY": 0.9}[key]
     end = datetime.now(ET).replace(second=0, microsecond=0)
     step = {"1": 1, "5": 5, "15": 15, "60": 60, "D": 1440}[interval]
     idx = pd.date_range(end=end, periods=n, freq=f"{step}min")

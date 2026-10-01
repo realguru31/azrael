@@ -1,146 +1,174 @@
-"""desk.py — the session cockpit. Open it at 08:30 and the day is on one screen."""
+"""desk.py — the session cockpit, built for the moment of execution: the banner says what to do, the chart shows
+where price is against the map, everything else folds away."""
 from __future__ import annotations
 
-from datetime import date
+from datetime import date, time as dtime, datetime, timedelta
 
 import streamlit as st
+import streamlit.components.v1 as components
 
+from core import execution as X
 from core import rules as R
 from core import workstation as ws
 from data import fetcher as F
 from utils import charts as C
-from utils.timeutil import T_GATE_END, T_OPEN, T_SHUTDOWN, is_trading_day, minutes_of, now_et
+from utils import lwchart as LW
+from utils.timeutil import ET, T_OPEN, minutes_of, now_et
 from views import common as U
+
+TONE = {"neutral": ("#263653", "#e0e0e0"), "wait": ("#3d2d12", "#ffd27a"), "go": ("#123d2e", "#7ee2b5"),
+        "active": ("#1b3a5c", "#8ec5ff"), "done": ("#2a2f3a", "#e0e0e0"), "bad": ("#3d1a1a", "#ff9d9d")}
+
+
+def _banner(b: X.Banner):
+    bg, fg = TONE.get(b.tone, TONE["neutral"])
+    plays_html = ""
+    for p in b.plays:
+        badge = {"armed": "ok", "watch": "", "blocked": "bad"}[p.status]
+        plays_html += (f"<div style='margin:8px 0 0 0;padding:8px 10px;border-radius:5px;background:rgba(0,0,0,0.18);'>"
+                       f"<span class='tag {badge}'>{p.status.upper()}</span> <b>{p.side}</b> — {p.title}"
+                       f"<div class='small' style='margin-top:4px'>Condition: {p.condition}</div>"
+                       f"<div class='small'>Entry: {p.entry} · Stop: {p.stop} · Target: {p.target}</div>"
+                       f"<div class='small'>{p.status_text}</div></div>")
+    notes = "".join(f"<div class='small' style='margin-top:6px'>▲ {n}</div>" for n in b.notes)
+    st.markdown(
+        f"<div style='padding:14px 16px;border-radius:8px;background:{bg};border-left:8px solid {fg};margin:6px 0 10px 0;'>"
+        f"<div style='font-size:0.78rem;letter-spacing:0.08em;color:{fg};'>TRADE OPPORTUNITY · {b.state.replace('_', ' ')}</div>"
+        f"<div style='font-size:1.35rem;font-weight:600;color:{fg};margin:2px 0;'>{b.headline}</div>"
+        f"<div style='color:var(--text);font-size:0.95rem;'>{b.sub}</div>"
+        f"{plays_html}"
+        f"<div style='margin-top:10px;padding-top:8px;border-top:1px solid rgba(255,255,255,0.12);color:var(--text);font-size:0.9rem;'>"
+        f"<b>CREDIT</b> · {b.credit}</div>{notes}</div>", unsafe_allow_html=True)
 
 
 def render(cfg, plan, label):
     sess: date = cfg["session"]
     U.status_bar(plan, label, sess)
-    U.phase_banner()
     if not plan.get("ok"):
         st.error(f"Feeds did not return C5/C6 for {sess}: {plan.get('notes')}. Use the overrides in the sidebar or try again.")
         return
+    now = now_et()
+    m = minutes_of(now)
+    locked = label.startswith("LOCKED")
 
-    spx5, spx_src = U.bars("SPX", "5", 400, U.bucket())
+    # ── data
+    spx1, spx_src = U.bars("SPX", "1", 800, U.bucket())
+    spx5, _ = U.bars("SPX", "5", 400, U.bucket())
     spy5, _ = U.bars("SPY", "5", 400, U.bucket())
     qqq5, _ = U.bars("QQQ", "5", 400, U.bucket())
-    day = F.session_slice(spx5, sess)
+    day1 = F.session_slice(spx1, sess)
+    day5 = F.session_slice(spx5, sess)
     day_spy, day_qqq = F.session_slice(spy5, sess), F.session_slice(qqq5, sess)
-    m = minutes_of(now_et())
+    proxy, proxy_src = U.proxy_overnight_spx(plan, sess) if cfg.get("overnight", True) else (None, "")
+    last_spx, last_t = F.latest(day1)
+    last = last_spx
+    if last is None and proxy is not None and not proxy.empty:
+        last = float(proxy["close"].iloc[-1])
+    lv = R.rule_levels(plan)
+    grid = {k: lv[k] for k in ("C13", "C14", "C15", "C16", "C17")}
+    gate = R.gate_test(day5) if not day5.empty else None
+    live = R.live_status(day5, day_spy, day_qqq, grid, lv["em"], lv["put_node"], lv["call_node"], plan["inputs"]["c6"]) if not day5.empty else None
+    chain = U.chain(plan["expiries"][0], "SPX", U.bucket())
 
-    # ── gap-day protocol at 09:31: auto-fill C10 from the 09:30 cash open when the triggers fire
-    gap = plan["gap"]
-    open_px = U.spx_open_print(sess) if (sess == now_et().date() and m >= T_OPEN + 1) else None
-    with st.container():
-        c1, c2 = st.columns([0.62, 0.38])
-        with c2:
-            st.markdown("**Levels (SPX points)**")
+    # ── 1. the banner
+    _banner(X.banner(plan, lv, day5, last, m, gate, live, chain, locked))
+
+    # ── 2. the chart
+    sg, gap = plan["strike_grid"], plan["gap"]
+    levels = [
+        {"price": grid["C13"], "color": "#3d8bff", "style": 1, "title": "+1.0 wall C13"},
+        {"price": grid["C14"], "color": "#ff9d2e", "style": 2, "title": "+0.5 shelf C14"},
+        {"price": grid["C15"], "color": "#a7b1bd", "style": 0, "title": "anchor C15", "width": 2},
+        {"price": grid["C16"], "color": "#ff9d2e", "style": 2, "title": "−0.5 shelf C16"},
+        {"price": grid["C17"], "color": "#3d8bff", "style": 1, "title": "−1.0 wall C17"},
+        {"price": lv["call_node"], "color": "#b06cff", "style": 1, "title": "call node"},
+        {"price": lv["put_node"], "color": "#b06cff", "style": 1, "title": "put node"},
+        {"price": sg["call_fence"], "color": "#e3b600", "style": 4, "title": "call fence"},
+        {"price": sg["put_fence"], "color": "#e3b600", "style": 4, "title": "put fence"},
+    ]
+    sc = plan.get("stop_clusters", {})
+    for nm, k in (("pre-mkt high", "pre_market_high"), ("pre-mkt low", "pre_market_low"), ("prior high", "prior_session_high"), ("prior low", "prior_session_low")):
+        if sc.get(k):
+            levels.append({"price": sc[k], "color": "#7a8794", "style": 4, "title": nm})
+    if gap["active"]:
+        for k, nm in (("c39", "gap anchor C39"), ("c41", "+0.5 intraday C41"), ("c42", "−0.5 intraday C42")):
+            levels.append({"price": gap[k], "color": "#c084fc", "style": 3, "title": nm})
+    f_dt, t_dt = U.chart_window(sess)
+    markers = [(datetime.combine(sess, dtime(h, mi), tzinfo=ET), txt) for h, mi, txt in
+               ((9, 30, "09:30 open"), (9, 50, "09:50 gate"), (10, 15, "10:15"), (11, 5, "11:05 last bar"), (11, 30, "11:30 shutdown"), (16, 0, "16:00 settle"))]
+    ys = [l["price"] for l in levels] + ([float(day1["low"].min()), float(day1["high"].max())] if not day1.empty else []) \
+        + ([float(proxy["low"].min()), float(proxy["high"].max())] if proxy is not None and not proxy.empty else [])
+    em = plan["grid"]["c12"]
+    title = f"SPX cash 1-minute ({spx_src or 'no feed'})" + (f" · overnight {proxy_src}" if proxy is not None else "") + ("" if locked else " · PROVISIONAL map")
+    st.caption(title)
+    if cfg.get("engine", "TradingView lightweight").startswith("TradingView"):
+        html = LW.build(day1, proxy, levels, (f_dt, t_dt), markers, U.theme_name(), cfg.get("candles", False), 540,
+                        anchor=grid["C15"], lo=min(ys) - 0.1 * em, hi=max(ys) + 0.1 * em, proxy_name="SPX500 proxy")
+        components.html(html, height=556, scrolling=False)
+    else:
+        fig = C.session_chart(day5, sess, grid, {"call_node": lv["call_node"], "put_node": lv["put_node"]},
+                              {"call_fence": sg["call_fence"], "put_fence": sg["put_fence"]},
+                              {"c39": gap["c39"], "c41": gap["c41"], "c42": gap["c42"]} if gap["active"] else None,
+                              spot=last, height=540, candles=cfg.get("candles", False), overnight=proxy, show_premarket=m < T_OPEN)
+        st.plotly_chart(fig, use_container_width=True, key="desk_chart")
+
+    # ── 3. one line each: gate verdict · scanner · card
+    c1, c2, c3 = st.columns([0.34, 0.33, 0.33])
+    with c1:
+        if gate is None:
+            st.markdown("<span class='tag'>09:50 TEST</span> waiting for the 09:30 open", unsafe_allow_html=True)
+        else:
+            cls = {"acceptance": "ok", "trap": "warn", "unconfirmed": "", "pending": ""}[gate.status]
+            st.markdown(f"<span class='tag {cls}'>09:50 TEST · {gate.status.upper()}</span> {gate.detail}", unsafe_allow_html=True)
+    with c2:
+        el = plan["eligible"]
+        st.markdown("<span class='tag'>ELIGIBLE</span> " + " ".join(f"<span class='tag ok'>A{a}</span>" for a in el["valid"])
+                    + " " + " ".join(f"<span class='tag bad'>A{a} banned</span>" for a in el["banned"]), unsafe_allow_html=True)
+    with c3:
+        from data import storage as S
+        card = S.load_cards().get(sess.isoformat())
+        st.markdown(f"<span class='tag {'ok' if card and card.get('locked') else 'warn'}'>CARD</span> " +
+                    (card["text"][:140] if card else "none yet — Scenario & trade card page, before 09:25"), unsafe_allow_html=True)
+
+    # ── 4. everything else folds away
+    with st.expander("Levels · gap protocol · King Node (C10 entry lives here)", expanded=False):
+        a, b = st.columns([0.55, 0.45])
+        with a:
             U.level_table(plan, gap=True)
-            st.markdown("**Gap protocol (Step 1.5)**")
+        with b:
+            open_px = U.spx_open_print(sess) if (sess == now.date() and m >= T_OPEN + 1) else None
             drift_flag = plan["inputs"].get("c7") is not None and abs(plan["inputs"]["c7"]) >= 0.75
             if open_px:
-                auto_trigger = open_px > plan["grid"]["c13"] or open_px < plan["grid"]["c17"] or abs((open_px - plan["grid"]["c5"]) / plan["grid"]["c5"] * 100) >= 0.75
-                st.caption(f"09:30 cash open {open_px:,.2f} · {'RE-ANCHOR conditions met' if auto_trigger else 'inside the envelope, drift below 0.75 %'}")
-                if auto_trigger and not st.session_state.get("c10_value"):
+                trig = open_px > plan["grid"]["c13"] or open_px < plan["grid"]["c17"] or abs((open_px - plan["grid"]["c5"]) / plan["grid"]["c5"] * 100) >= 0.75
+                st.caption(f"09:30 cash open {open_px:,.2f} · {'RE-ANCHOR conditions met' if trig else 'inside the envelope, drift below 0.75 %'}")
+                if trig and not st.session_state.get("c10_value"):
                     if st.button("Enter the 09:30 open in C10 (activate the Gap Re-Anchor Engine)", use_container_width=True):
                         st.session_state["c10_value"] = open_px
                         st.rerun()
             elif drift_flag:
                 st.caption(f"/ES drift {plan['inputs']['c7']:+.2f} % ≥ 0.75 %: probable gap day — enter the 09:30 cash open in C10 at 09:31.")
-            c10 = st.number_input("C10  Today's 09:30 cash open (blank on normal days = 0)", min_value=0.0, step=0.01,
+            c10 = st.number_input("C10 Today's 09:30 cash open (0 = blank)", min_value=0.0, step=0.01,
                                   value=float(st.session_state.get("c10_value") or 0.0), key="c10_widget")
             if (c10 or None) != st.session_state.get("c10_value"):
                 st.session_state["c10_value"] = c10 or None
                 st.rerun()
             st.markdown(f"<span class='tag {'warn' if gap['active'] else ''}'>{gap['c38']}</span>", unsafe_allow_html=True)
-        with c1:
-            lv = R.rule_levels(plan)
-            levels = {k: lv[k] for k in ("C13", "C14", "C15", "C16", "C17")}
-            nodes = {"call_node": lv["call_node"], "put_node": lv["put_node"]}
-            fences = {"call_fence": plan["strike_grid"]["call_fence"], "put_fence": plan["strike_grid"]["put_fence"]}
-            gapl = {"c39": gap["c39"], "c41": gap["c41"], "c42": gap["c42"]} if gap["active"] else None
-            extra = []
-            sc = plan.get("stop_clusters", {})
-            for nm, k in (("pre-mkt high", "pre_market_high"), ("pre-mkt low", "pre_market_low"),
-                          ("prior high", "prior_session_high"), ("prior low", "prior_session_low")):
-                if sc.get(k):
-                    extra.append({"y": sc[k], "name": nm, "color": "#7a8794", "dash": "dot"})
-            last, _ = F.latest(day)
-            std_levels = {"C13": plan["grid"]["c13"], "C14": plan["grid"]["c14"], "C15": plan["grid"]["c15"],
-                          "C16": plan["grid"]["c16"], "C17": plan["grid"]["c17"]}
-            pre_open = day.empty or m < T_OPEN
-            overnight = U.es_overnight_spx(plan, sess) if cfg.get("overnight", True) else None
-            if last is None and overnight is not None and not overnight.empty:
-                last = float(overnight["close"].iloc[-1])
-            fig = C.session_chart(day, sess, std_levels,
-                                  {"call_node": plan["strike_grid"]["call_node"], "put_node": plan["strike_grid"]["put_node"]},
-                                  fences, gapl, spot=last, extra_lines=extra, height=540,
-                                  title=f"SPX cash · 5-minute · {spx_src or 'no feed'}" + (" · provisional map" if not label.startswith("LOCKED") else ""),
-                                  candles=cfg.get("candles", False), overnight=overnight,
-                                  show_premarket=pre_open and overnight is not None)
-            st.plotly_chart(fig, use_container_width=True, key="desk_chart")
-            if gap["active"]:
-                st.caption("Gap Re-Anchor active: the scanner below uses C41/C42 as shelves, C43/C44 as King Nodes, C45/C46 as the 1.0 targets. "
-                           "Standard levels stay on the chart as the macro envelope and gap-fill targets.")
-
-    # ── the 09:50 test and the live scanner
-    st.markdown("---")
-    g1, g2 = st.columns([0.4, 0.6])
-    with g1:
-        st.markdown("**The 09:50 test**")
-        gt = R.gate_test(day) if not day.empty else None
-        if gt is None:
-            st.info("Waiting for the 09:30 open.")
-        else:
-            cls = {"acceptance": "ok", "trap": "warn", "unconfirmed": "", "pending": ""}[gt.status]
-            st.markdown(f"<span class='tag {cls}'>{gt.status.upper()}</span> {gt.detail}", unsafe_allow_html=True)
-            gb = day[(day.index.hour * 60 + day.index.minute) < T_GATE_END]
-            if not gb.empty:
-                st.caption(f"Gate range 09:30–09:50: high {gb['high'].max():,.2f} · low {gb['low'].min():,.2f} · open print {gt.open_print:,.2f}. "
-                           "Use the gate's high and low after 09:50 to confirm a fade or an acceptance.")
-        el = plan["eligible"]
-        st.markdown("**Eligible today** " + " ".join(f"<span class='tag ok'>{ws.ARCHETYPE_NAME[a]}</span>" for a in el["valid"])
-                    + " " + " ".join(f"<span class='tag bad'>{ws.ARCHETYPE_NAME[a].split(':')[0]} banned</span>" for a in el["banned"]),
-                    unsafe_allow_html=True)
-        st.caption(el["note"])
-    with g2:
-        st.markdown("**Live scanner — mechanical rules on today's 5-minute bars**")
-        if day.empty:
-            st.info("No regular-hours bars yet.")
-        else:
-            lv = R.rule_levels(plan)
-            grid = {k: lv[k] for k in ("C13", "C14", "C15", "C16", "C17")}
-            ls = R.live_status(day, day_spy, day_qqq, grid, lv["em"], lv["put_node"], lv["call_node"], plan["inputs"]["c6"])
-            ch = ls["chosen"]
-            if ch is not None:
-                st.markdown(f"<span class='tag ok'>QUALIFYING BAR</span> **Archetype {ch.archetype} {ch.side}** at {ch.trigger_time} — entry {ch.entry:,.2f}, "
-                            f"stop {ch.stop:,.2f}, target {ch.target:,.2f}, planned risk {ch.risk_pts:.2f} pts = 1R.", unsafe_allow_html=True)
-                st.caption(ch.trigger_text)
-                if ch.resolution not in (None, "open"):
-                    st.caption(ch.resolution_text)
-            else:
-                if m >= T_SHUTDOWN:
-                    st.markdown("<span class='tag'>STAND DOWN</span> No qualifying bar closed by 11:05 — no trade today. Capital intact; the session is a Watch Day.",
-                                unsafe_allow_html=True)
-                elif m >= T_GATE_END:
-                    st.markdown("<span class='tag'>NO QUALIFYING BAR YET</span>", unsafe_allow_html=True)
-                else:
-                    st.markdown("<span class='tag bad'>GATE OPEN — NO TRADES</span>", unsafe_allow_html=True)
-            pr = ls.get("proximity", {})
+            if plan.get("oi_node"):
+                o = plan["oi_node"]
+                st.caption(f"Live chain OI King Node (book definition): {o['strike']:,.0f} with {o['total_oi']:,.0f} contracts within 1 EM.")
+    with st.expander("Scanner detail — also checked", expanded=False):
+        if live:
+            for line in live["also_checked"]:
+                st.write("• " + line)
+            pr = live.get("proximity", {})
             if pr:
                 st.caption(f"Last {pr['last']:,.2f} ({pr['last_time']}) · to put node {pr['put_node']:+.2f} · to call node {pr['call_node']:+.2f} · "
-                           f"to C16 {pr['C16']:+.2f} · to C14 {pr['C14']:+.2f} · to C17 {pr['C17']:+.2f} · to C13 {pr['C13']:+.2f}")
-            with st.expander("Also checked", expanded=False):
-                for line in ls["also_checked"]:
-                    st.write("• " + line)
-
-    # ── the day's card
-    st.markdown("---")
-    from data import storage as S
-    card = S.load_cards().get(sess.isoformat())
-    if card:
-        st.markdown(f"**Trade card ({'locked' if card.get('locked') else 'draft'}, posted {card.get('posted_at', '')})** — " + card.get("text", ""))
-    else:
-        st.caption("No trade card yet for this session. Write it on the Scenario & Card page before 09:25 — or post Watch Day.")
-    st.caption(f"Sources: SPX {plan['sources'].get('spx')} · VIX {plan['sources'].get('vix')} · /ES {plan['sources'].get('es')} · "
-               f"chain {plan['sources'].get('chain')} · C6 {plan['notes'].get('c6', '')} · C7 {plan['notes'].get('c7', '')}")
+                           f"to C16 {pr['C16']:+.2f} · to C14 {pr['C14']:+.2f}")
+        else:
+            st.caption("No regular-hours bars yet.")
+    with st.expander("Feeds", expanded=False):
+        st.caption(f"SPX {plan['sources'].get('spx')} · VIX {plan['sources'].get('vix')} · /ES {plan['sources'].get('es')} · proxy {plan['inputs'].get('proxy_src', '—')} "
+                   f"(basis {plan['inputs'].get('proxy_basis', 0) or 0:+.2f}) · chain {plan['sources'].get('chain')}")
+        st.caption(f"C5 {plan['notes'].get('c5', '')} · C6 {plan['notes'].get('c6', '')} · C7 {plan['notes'].get('c7', '')}")
+        if last_spx is not None:
+            st.caption(f"Last SPX print {last_spx:,.2f} at {last_t}.")

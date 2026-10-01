@@ -121,6 +121,19 @@ def prior_close(key: str, session: date, creds=None) -> Tuple[Optional[float], O
     return None, None, src
 
 
+def futures_settle(key: str, session: date, creds=None) -> Tuple[Optional[float], Optional[date], str]:
+    """Prior settlement of a CME contract. The daily bar for the current session is stamped the prior evening
+    (18:00 ET open), so 'prior' means the last daily bar that CLOSED before that evening session began."""
+    df, src = daily(key, 10, creds)
+    if df is None or df.empty:
+        return None, None, src
+    cutoff = datetime.combine(session - timedelta(days=1), dtime(17, 30), tzinfo=ET)   # before the 18:00 open of this session
+    prior = df[df.index < cutoff]
+    if prior.empty:
+        return None, None, src
+    return float(prior["close"].iloc[-1]), prior.index[-1].date(), src
+
+
 def print_at(df: Optional[pd.DataFrame], session: date, hh: int, mm: int) -> Tuple[Optional[float], str]:
     """Close of the 1-minute bar stamped hh:mm (the 'print'), else the last bar before it that day."""
     if df is None or df.empty:

@@ -59,7 +59,9 @@ def build_plan(session: date, vix_print: str = "08:15", es_print: str = "08:20",
     es1, es_src = F.get_bars("ES", "1", 1400, creds)
     es_print_px, es_note = F.print_at(es1, session, eh, em_)
     es_live, es_live_t = F.latest(es1)
-    es_settle, es_settle_date, _ = F.prior_close("ES", session, creds)
+    es_settle, es_settle_date, _ = F.futures_settle("ES", session, creds)
+    if es_settle is None:
+        es_settle, es_settle_date, _ = F.prior_close("ES", session, creds)
     if es_print_px is None:
         es_print_px, es_note = es_live, f"latest /ES ({es_live_t})"
     c7 = None

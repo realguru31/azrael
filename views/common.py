@@ -17,36 +17,62 @@ from data import storage as S
 from utils.timeutil import (ET, current_phase, fmt_hm, fmt_session_title, is_trading_day, minutes_of, now_et,
                             prev_trading_day, session_date, T_CLOSE)
 
-CSS = """
+CSS_BASE = """
 <style>
 @import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap');
+:root { --bg:%(bg)s; --panel:%(panel)s; --panel2:%(panel2)s; --border:%(border)s; --text:%(text)s; --muted:%(muted)s; --num:%(num)s; }
 html, body, [class*="css"] { font-family: 'IBM Plex Sans', system-ui, sans-serif; }
+.stApp, .stApp > header, [data-testid="stAppViewContainer"], [data-testid="stHeader"] { background: var(--bg) !important; color: var(--text) !important; }
+[data-testid="stSidebar"], [data-testid="stSidebar"] > div { background: var(--panel) !important; }
+[data-testid="stSidebar"] *, .stApp p, .stApp li, .stApp label, .stApp h1, .stApp h2, .stApp h3, .stApp h4, .stApp .stMarkdown,
+.stApp [data-testid="stMetricLabel"], .stApp [data-testid="stMetricValue"], .stApp [data-testid="stWidgetLabel"] { color: var(--text) !important; }
+.stApp [data-testid="stCaptionContainer"], .stApp .small { color: var(--muted) !important; }
+.stApp input, .stApp textarea, .stApp [data-baseweb="select"] > div, .stApp [data-baseweb="input"] > div, .stApp [data-testid="stNumberInputContainer"] > div
+  { background: var(--panel2) !important; color: var(--text) !important; border-color: var(--border) !important; }
+.stApp [data-testid="stExpander"] details { background: var(--panel) !important; border-color: var(--border) !important; }
+.stApp .stDataFrame, .stApp [data-testid="stTable"] { background: var(--panel) !important; }
+.stApp .stCode, .stApp pre, .stApp code { background: var(--panel2) !important; color: var(--text) !important; }
+.stApp .stAlert { background: var(--panel) !important; }
+.stApp hr { border-color: var(--border) !important; }
 .block-container { padding-top: 0.8rem; padding-bottom: 2rem; }
 .num, .mono { font-family: 'IBM Plex Mono', ui-monospace, monospace; font-variant-numeric: tabular-nums; }
-.statusbar { display:flex; flex-wrap:wrap; gap:18px; align-items:baseline; padding:8px 14px; border-radius:6px;
-             background:#0f1620; border:1px solid #1d2733; margin-bottom:6px; }
-.statusbar .k { color:#8b96a3; font-size:0.78rem; }
-.statusbar .v { color:#e6ebf0; font-size:1.02rem; font-family:'IBM Plex Mono', monospace; }
-.statusbar .up { color:#39c98a; } .statusbar .dn { color:#ff6b6b; }
-.phase { padding:10px 14px; border-radius:6px; border-left:6px solid; margin:6px 0 12px 0; background:#111925; }
-.phase .t { font-weight:600; font-size:1.02rem; color:#f1f4f7; }
-.phase .d { color:#aeb8c3; font-size:0.86rem; margin-top:2px; }
-.phase .c { float:right; font-family:'IBM Plex Mono', monospace; color:#f1f4f7; font-size:1.1rem; }
-.lvl { display:grid; grid-template-columns: 1fr auto; gap:2px 12px; font-size:0.9rem; }
-.lvl .name { color:#aeb8c3; } .lvl .val { font-family:'IBM Plex Mono', monospace; color:#f1f4f7; text-align:right; }
-.wall { color:#3d8bff; } .shelf { color:#ff9d2e; } .anchor { color:#a7b1bd; } .node { color:#b06cff; } .fence { color:#ffd75e; }
-.tag { display:inline-block; padding:2px 8px; border-radius:4px; font-size:0.78rem; margin-right:6px; background:#1b2635; color:#c9d3dd; }
-.tag.ok { background:#123d2e; color:#7ee2b5; } .tag.warn { background:#3d2d12; color:#ffd27a; } .tag.bad { background:#3d1a1a; color:#ff9d9d; }
-.small { color:#8b96a3; font-size:0.8rem; }
+.statusbar { display:flex; flex-wrap:wrap; gap:14px 22px; align-items:baseline; padding:9px 14px; border-radius:6px;
+             background:var(--panel); border:1px solid var(--border); margin-bottom:6px; }
+.statusbar .item { display:inline-flex; gap:6px; align-items:baseline; }
+.statusbar .k { color:var(--muted); font-size:0.78rem; }
+.statusbar .v { color:var(--text); font-size:1.02rem; font-family:'IBM Plex Mono', monospace; }
+.statusbar .up { color:#26a69a; } .statusbar .dn { color:#ef5350; }
+.phase { padding:10px 14px; border-radius:6px; border-left:6px solid; margin:6px 0 12px 0; background:var(--panel); }
+.phase .t { font-weight:600; font-size:1.02rem; color:var(--text); }
+.phase .d { color:var(--muted); font-size:0.86rem; margin-top:2px; }
+.phase .c { float:right; font-family:'IBM Plex Mono', monospace; color:var(--text); font-size:1.1rem; }
+.lvl { display:grid; grid-template-columns: 1fr auto; gap:3px 12px; font-size:0.9rem; }
+.lvl .name { color:var(--muted); } .lvl .val { font-family:'IBM Plex Mono', monospace; color:var(--num); text-align:right; }
+.wall { color:#3d8bff !important; } .shelf { color:#ff9d2e !important; } .anchor { color:var(--text) !important; } .node { color:#b06cff !important; } .fence { color:#e3b600 !important; }
+.tag { display:inline-block; padding:2px 8px; border-radius:4px; font-size:0.78rem; margin-right:6px; background:var(--panel2); color:var(--text); border:1px solid var(--border); }
+.tag.ok { background:rgba(38,166,154,0.18); color:#26a69a; border-color:#26a69a; } .tag.warn { background:rgba(255,214,0,0.15); color:#d29a1c; border-color:#d29a1c; }
+.tag.bad { background:rgba(239,83,80,0.15); color:#ef5350; border-color:#ef5350; }
+.small { color:var(--muted); font-size:0.8rem; }
 div[data-testid="stMetricValue"] { font-family:'IBM Plex Mono', monospace; }
 </style>
 """
+THEME_VARS = {
+    "dark": {"bg": "#0e1117", "panel": "#16213e", "panel2": "#1a2a4a", "border": "#263653", "text": "#e0e0e0", "muted": "#a0a0a0", "num": "#ffffff"},
+    "light": {"bg": "#ffffff", "panel": "#f3f5f8", "panel2": "#e9edf2", "border": "#d4dae2", "text": "#1f2937", "muted": "#5b6672", "num": "#111827"},
+}
 
 REFRESH_SECONDS = 60
 
 
+def theme_name() -> str:
+    return st.session_state.get("set_theme", "dark")
+
+
 def setup() -> None:
-    st.markdown(CSS, unsafe_allow_html=True)
+    from utils import charts as _C
+    name = theme_name()
+    st.markdown(CSS_BASE % THEME_VARS[name], unsafe_allow_html=True)
+    _C.set_theme(name)
 
 
 # ── secrets ───────────────────────────────────────────────────────────────────
@@ -72,13 +98,16 @@ def configure_storage() -> None:
 
 # ── settings (sidebar, persisted in session_state) ────────────────────────────
 DEFAULTS = {"c8": 25000.0, "c9": 1.0, "c27": 8.0, "c28": 0.55, "vix_print": "08:15", "es_print": "08:20",
-            "ov_c5": 0.0, "ov_c6": 0.0, "ov_c7": "", "c10": 0.0, "macro": "", "auto_refresh": True}
+            "ov_c5": 0.0, "ov_c6": 0.0, "ov_c7": "", "c10": 0.0, "macro": "", "auto_refresh": True, "theme": "dark",
+            "candles": False, "overnight": True}
 
 
 def settings() -> Dict:
     for k, v in DEFAULTS.items():
         st.session_state.setdefault(f"set_{k}", v)
     with st.sidebar:
+        st.radio("Theme", ["dark", "light"], horizontal=True, key="set_theme",
+                 help="Dark is the SPX dash palette. Streamlit's own widgets follow .streamlit/config.toml — keep that file in the repo.")
         st.markdown("### Desk settings")
         sess = st.date_input("Session", value=st.session_state.get("set_session", session_date()), key="set_session_input")
         st.session_state["set_session"] = sess
@@ -86,6 +115,8 @@ def settings() -> Dict:
         st.number_input("C9  Max risk per trade (%)", min_value=0.1, max_value=10.0, step=0.1, key="set_c9")
         st.number_input("C27 Structural stop (SPX pts)", min_value=0.5, step=0.5, key="set_c27")
         st.number_input("C28 Option delta", min_value=0.05, max_value=1.0, step=0.05, key="set_c28")
+        st.checkbox("Candlesticks instead of closes line", key="set_candles")
+        st.checkbox("Show /ES overnight (basis-adjusted) before the open", key="set_overnight")
         with st.expander("Feed timing · overrides", expanded=False):
             st.selectbox("VIX print used for C6", ["08:15", "08:30"], key="set_vix_print",
                          help="Desk bot: the 08:15 AM ET print. Manual: the live quote at 08:30.")
@@ -111,7 +142,8 @@ def settings() -> Dict:
             "c27": float(st.session_state["set_c27"]), "c28": float(st.session_state["set_c28"]),
             "vix_print": st.session_state["set_vix_print"], "es_print": st.session_state["set_es_print"],
             "overrides": ov, "macro": st.session_state["set_macro"], "auto": st.session_state["set_auto_refresh"],
-            "c10": st.session_state.get("c10_value")}
+            "c10": st.session_state.get("c10_value"), "candles": bool(st.session_state.get("set_candles")),
+            "overnight": bool(st.session_state.get("set_overnight", True))}
 
 
 def bucket(seconds: int = REFRESH_SECONDS) -> int:
@@ -149,6 +181,23 @@ def get_plan(cfg: Dict) -> Tuple[Dict, str]:
     return plan, label
 
 
+def es_overnight_spx(plan: Dict, session: date) -> Optional[pd.DataFrame]:
+    """/ES 1-minute bars from 18:00 the prior evening to the open, shifted into SPX points with the prior-16:00 basis."""
+    es1, _ = bars("ES", "1", 1400, bucket())
+    basis = (plan.get("inputs") or {}).get("es_basis") if plan.get("ok") else None
+    if es1 is None or es1.empty or basis is None:
+        return None
+    from datetime import timedelta, time as dtime
+    start = datetime.combine(session - timedelta(days=1), dtime(18, 0), tzinfo=ET)
+    end = datetime.combine(session, dtime(9, 30), tzinfo=ET)
+    w = es1[(es1.index >= start) & (es1.index < end)].copy()
+    if w.empty:
+        return None
+    for c in ("open", "high", "low", "close"):
+        w[c] = w[c] - basis
+    return w
+
+
 def spx_open_print(session: date) -> Optional[float]:
     """The official 09:30 cash open — the 09:30 1-minute bar's open (for C10 on gap days)."""
     df, _ = bars("SPX", "1", 800, bucket())
@@ -160,28 +209,35 @@ def spx_open_print(session: date) -> Optional[float]:
 
 
 # ── header widgets ────────────────────────────────────────────────────────────
+def _item(k, v, cls=""):
+    return f"<span class='item'><span class='k'>{k}</span><span class='v {cls}'>{v}</span></span>"
+
+
 def status_bar(plan: Dict, label: str, session: date) -> None:
     spx1, _ = bars("SPX", "1", 800, bucket())
     last, last_t = F.latest(spx1)
     i = plan.get("inputs", {}) if plan.get("ok") else {}
     c5 = i.get("c5")
-    chg = (last - c5) if (last and c5) else None
-    vix_live = plan.get("live_inputs", i).get("vix_live") if plan.get("ok") else None
-    parts = [f"<span><span class='k'>SPX</span> <span class='v'>{last:,.2f}</span></span>" if last else "<span class='k'>SPX —</span>"]
-    if chg is not None:
-        cls = "up" if chg >= 0 else "dn"
-        parts.append(f"<span><span class='k'>vs C5</span> <span class='v {cls}'>{chg:+.2f} ({chg / c5 * 100:+.2f}%)</span></span>")
+    items = []
+    if last is not None:
+        items.append(_item("SPX last", f"{last:,.2f}" + (f" <span class='k'>({last_t})</span>" if last_t else "")))
+        if c5:
+            chg = last - c5
+            items.append(_item("vs C5", f"{chg:+.2f} ({chg / c5 * 100:+.2f}%)", "up" if chg >= 0 else "dn"))
+    else:
+        items.append(_item("SPX", "no bars"))
     if plan.get("ok"):
-        parts.append(f"<span><span class='k'>VIX C6</span> <span class='v'>{i['c6']:.2f}</span></span>")
-        if vix_live:
-            parts.append(f"<span><span class='k'>VIX now</span> <span class='v'>{vix_live:.2f}</span></span>")
-        c7txt = f"{i['c7']:+.2f}%" if i.get("c7") is not None else "—"
-        parts.append(f"<span><span class='k'>/ES drift C7</span> <span class='v'>{c7txt}</span></span>")
-        parts.append(f"<span><span class='k'>EM C12</span> <span class='v'>±{plan['grid']['c12']:.2f}</span></span>")
-        parts.append(f"<span><span class='k'>Regime</span> <span class='v'>{ws.REGIME_NAME[plan['regime']]}</span></span>")
-    parts.append(f"<span><span class='k'>{fmt_session_title(session)}</span> <span class='v'>{now_et().strftime('%H:%M:%S')} ET</span></span>")
-    parts.append(f"<span class='tag {'ok' if label.startswith('LOCKED') else 'warn'}'>{label}</span>")
-    st.markdown(f"<div class='statusbar'>{''.join(parts)}</div>", unsafe_allow_html=True)
+        items.append(_item("C5 close", f"{i['c5']:,.2f}"))
+        items.append(_item("C6 VIX", f"{i['c6']:.2f}"))
+        vl = plan.get("live_inputs", i).get("vix_live")
+        if vl:
+            items.append(_item("VIX now", f"{vl:.2f}"))
+        items.append(_item("C7 /ES", f"{i['c7']:+.2f}%" if i.get("c7") is not None else "—"))
+        items.append(_item("EM C12", f"±{plan['grid']['c12']:.2f}"))
+        items.append(_item("Regime", ws.REGIME_NAME[plan["regime"]]))
+    items.append(_item(fmt_session_title(session), now_et().strftime("%H:%M:%S") + " ET"))
+    items.append(f"<span class='tag {'ok' if label.startswith('LOCKED') else 'warn'}'>{label}</span>")
+    st.markdown("<div class='statusbar'>" + "".join(items) + "</div>", unsafe_allow_html=True)
 
 
 def phase_banner() -> None:

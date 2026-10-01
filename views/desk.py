@@ -68,10 +68,16 @@ def render(cfg, plan, label):
             last, _ = F.latest(day)
             std_levels = {"C13": plan["grid"]["c13"], "C14": plan["grid"]["c14"], "C15": plan["grid"]["c15"],
                           "C16": plan["grid"]["c16"], "C17": plan["grid"]["c17"]}
+            pre_open = day.empty or m < T_OPEN
+            overnight = U.es_overnight_spx(plan, sess) if cfg.get("overnight", True) else None
+            if last is None and overnight is not None and not overnight.empty:
+                last = float(overnight["close"].iloc[-1])
             fig = C.session_chart(day, sess, std_levels,
                                   {"call_node": plan["strike_grid"]["call_node"], "put_node": plan["strike_grid"]["put_node"]},
-                                  fences, gapl, spot=last, extra_lines=extra, height=520,
-                                  title=f"SPX cash · 5-minute closes · {spx_src or 'no feed'}")
+                                  fences, gapl, spot=last, extra_lines=extra, height=540,
+                                  title=f"SPX cash · 5-minute · {spx_src or 'no feed'}" + (" · provisional map" if not label.startswith("LOCKED") else ""),
+                                  candles=cfg.get("candles", False), overnight=overnight,
+                                  show_premarket=pre_open and overnight is not None)
             st.plotly_chart(fig, use_container_width=True, key="desk_chart")
             if gap["active"]:
                 st.caption("Gap Re-Anchor active: the scanner below uses C41/C42 as shelves, C43/C44 as King Nodes, C45/C46 as the 1.0 targets. "

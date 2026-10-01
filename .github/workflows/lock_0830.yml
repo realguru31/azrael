@@ -1,0 +1,35 @@
+name: 08:30 lock (baseline)
+on:
+  schedule:
+    - cron: '31 12 * * 1-5'   # 08:31 ET during EDT (12:31 UTC)
+    - cron: '31 13 * * 1-5'   # 08:31 ET during EST (13:31 UTC) — the worker no-ops off-hours via session_date
+  workflow_dispatch:
+concurrency:
+  group: lock
+  cancel-in-progress: false
+jobs:
+  lock:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install
+        run: |
+          pip install -q requests pandas numpy tzdata curl_cffi
+          pip install -q git+https://github.com/rongardF/tvdatafeed.git
+      - name: Lock
+        env:
+          TV_USERNAME: ${{ secrets.TV_USERNAME }}
+          TV_PASSWORD: ${{ secrets.TV_PASSWORD }}
+        run: python workers/lock_worker.py
+      - name: Commit
+        run: |
+          git config user.name "Desk Bot"
+          git config user.email "bot@users.noreply.github.com"
+          git add store/baseline/
+          if git diff --cached --quiet; then echo "no change"; else
+            git commit -m "🔒 08:30 lock $(date -u +'%Y-%m-%d %H:%M UTC')"
+            git fetch origin main && git rebase origin/main && git push origin main
+          fi

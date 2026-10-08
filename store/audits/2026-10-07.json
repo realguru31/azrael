@@ -1,0 +1,65 @@
+{
+ "session": "WEDNESDAY (OCT 07, 2026)",
+ "settlement": 7801.77,
+ "anchor": 7818.93,
+ "vix": 15.77,
+ "vix_print_time": "08:15",
+ "em": 77.67455037839837,
+ "c13": 7896.604550378399,
+ "c14": 7857.7672751892,
+ "c15": 7818.93,
+ "c16": 7780.092724810801,
+ "c17": 7741.255449621602,
+ "put_node": 7780.0,
+ "call_node": 7860.0,
+ "put_fence": 7720.0,
+ "call_fence": 7915.0,
+ "session_low": 7763.34,
+ "session_low_time": "10:50",
+ "session_high": 7807.02,
+ "session_high_time": "15:00",
+ "range_pts": 43.68,
+ "range_em": 0.56,
+ "inside_1sigma": true,
+ "inside_half": true,
+ "walls_tested": false,
+ "wall_tested_side": "",
+ "half_shelves_held": false,
+ "king_node_touched": "put node 7780",
+ "stops_run": [
+  "pre-market low 7779.90 taken out (session low 7763.34 at 10:50)",
+  "prior session low 7805.96 taken out (session low 7763.34 at 10:50)",
+  "round hundred 7800 traded through"
+ ],
+ "nearest_miss": "the window high of 7779.82 held 77.95 pts below the +0.5 shelf 7857.77",
+ "score_line": "",
+ "provisional": false,
+ "last_print": null,
+ "last_print_time": "",
+ "settle_zone": "between C16 and C15",
+ "regime": 2,
+ "replay": null,
+ "also_checked": [
+  "Not eligible at VIX 15.77: Archetype 1 (needs VIX under 15).",
+  "Archetype 2 at the put node 7780 did not qualify: the best touch was the 09:50 bar (low 7769.85, close 7777.36); it did not close back above 7780 and the fall into the node after 09:50 was -0.18 pts from the 11:15 bar high 7779.82, under the 15-pt minimum. Archetype 2 at the call node 7860 did not qualify: SPX never reached it from 09:50 to 11:30; the window high was 7779.82, 80.18 pts below it.",
+  "Archetype 3 did not qualify: 10:40 closed only 3.30 pts outside the box (needs 3.88); 10:45 closed only 0.72 pts outside the box (needs 3.88).",
+  "Not eligible at VIX 15.77: Archetype 4 (needs VIX above 18.5)."
+ ],
+ "lesson": "The window high of 7779.82 held 77.95 pts below the +0.5 shelf 7857.77, and in a balanced gamma (two-way auction) inside the expected move, only an actual tag of the written level makes the setup live. Not trading was the trade.",
+ "proxies": [
+  {
+   "name": "SPY",
+   "settle": 777.33,
+   "band_lo": 771.3503904301092,
+   "band_hi": 786.8296095698909,
+   "em": 7.739609569890813
+  },
+  {
+   "name": "CAPITALCOM:SPX500 (08:20 price)",
+   "settle": 7797.9,
+   "band_lo": 7710.830726549919,
+   "band_hi": 7865.569273450081,
+   "em": 77.36927345008101
+  }
+ ]
+}

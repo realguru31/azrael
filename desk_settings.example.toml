@@ -20,5 +20,9 @@ theme = "dark"                        # dark | light
 engine = "TradingView lightweight"    # or "Plotly"
 candles = false
 candle_opacity = 0.7                  # 0.1 – 1.0, applies to both chart engines
-sound = true                          # beep on banner state change
-notify = false                        # browser notifications on state change
+sound = true                          # alert tones (trigger, exit, armed, MEIC defense) — press "🔔 Enable alerts" once per tab
+notify = true                         # desktop notifications (the browser asks once, from the Enable button)
+
+[alerts]
+armed = true                          # heads-up when a play reaches its trigger zone (S3: price outside the box)
+meic_defense = true                   # 5-pt defense + VIX regime-flip alerts for the 09:50 MEIC ticket

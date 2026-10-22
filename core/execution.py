@@ -20,7 +20,10 @@ from core import workstation as ws
 from core.rules import session_bars
 from utils.timeutil import (T_MATH, T_OPEN, T_GATE_END, T_PRIMARY_END, T_LAST_QUALIFYING, T_SHUTDOWN, T_CLOSE, fmt_hm)
 
-ARM_DISTANCE = 10.0     # points from a trigger level at which a play is 'armed'
+ARM_DISTANCE = 10.0     # points from a trigger level at which a level play (S1, S2, S4) is 'armed'
+# S3 is armed when the live price is OUTSIDE the 20-minute box (the next close could be the break); inside the box it is
+# watched. (Before 1.8.0 S3 was 'armed' whenever price was within 10 pts of a box edge — i.e. almost always, because
+# the box itself is at most 0.2 EM wide — which made ARMED meaningless and flooded the alerts.)
 
 
 @dataclass
@@ -35,6 +38,15 @@ class Play:
     status: str               # "watch" | "armed" | "blocked"
     status_text: str
     distance: Optional[float] = None
+    # display / alert fields (1.8.0) — what fires it and what it would trade if it did; never used by the rules engine
+    key: str = ""                             # stable id, e.g. "A3-long", "A2-short"
+    trigger_px: Optional[float] = None        # the level a 5-minute CLOSE must reach / reclaim
+    trigger_rule: str = ""                    # one line: "5-min close ≥ 7734.16 with SPY & QQQ outside their boxes"
+    stop_px: Optional[float] = None           # the stop the trade would carry if it fired now
+    target_px: Optional[float] = None         # the target it would carry if it fired now
+    ready: bool = True                        # every precondition except the close is met (e.g. S2 displacement ≥ 15)
+    ready_note: str = ""
+    box: Optional[Dict[str, float]] = None    # S3: the box the next close is measured against
 
     def as_dict(self):
         return asdict(self)
@@ -69,8 +81,10 @@ def _box(bars: pd.DataFrame, n: int = 4):
     return float(b["low"].min()), float(b["high"].max())
 
 
-def plays_for(plan: Dict, lv: Dict[str, float], bars: pd.DataFrame, last: Optional[float], sizing: Dict) -> List[Play]:
-    """The concrete directional plays the regime allows today, with live arming."""
+def plays_for(plan: Dict, lv: Dict[str, float], bars: pd.DataFrame, last: Optional[float], sizing: Dict,
+              closed_bars: Optional[pd.DataFrame] = None) -> List[Play]:
+    """The concrete directional plays the regime allows today, with live arming. `bars` may end with the forming bar
+    (session high/low, live price); `closed_bars` = the bars that had closed when the feed was read (the S3 box)."""
     reg, el = plan["regime"], plan["eligible"]["valid"]
     em = lv["em"]
     c13, c14, c15, c16, c17 = lv["C13"], lv["C14"], lv["C15"], lv["C16"], lv["C17"]
@@ -104,7 +118,11 @@ def plays_for(plan: Dict, lv: Dict[str, float], bars: pd.DataFrame, last: Option
         out.append(Play(2, "LONG CALLS", f"King-node fade at the put node {pn:,.0f}",
                         f"SPX falls ≥ 15 pts into {pn:,.0f} after 09:50 and a 5-minute bar closes back above it with a lower wick over half its range",
                         "the close of that bar", f"5-minute close below {pn - 5:,.0f}, or two closes below {pn:,.0f}",
-                        "half the fall back (then the next shelf)", st, tx, (last - pn) if last is not None else None))
+                        "half the fall back (then the next shelf)", st, tx, (last - pn) if last is not None else None,
+                        key="A2-long", trigger_px=pn, trigger_rule=f"5-min close back ABOVE {pn:,.0f} with a lower wick > ½ the bar",
+                        stop_px=pn - 5, target_px=(pn + fall / 2) if (fall is not None and fall >= 15) else None,
+                        ready=bool(fall is not None and fall >= 15),
+                        ready_note=(f"displacement {fall:.1f} / 15 pts" if fall is not None else "no bars yet")))
         rise = (cn - sess_lo) if sess_lo is not None else None
         st, tx = arm((cn - last) if last is not None else None)
         if rise is not None and rise < 15:
@@ -114,48 +132,104 @@ def plays_for(plan: Dict, lv: Dict[str, float], bars: pd.DataFrame, last: Option
         out.append(Play(2, "LONG PUTS", f"King-node fade at the call node {cn:,.0f}",
                         f"SPX rises ≥ 15 pts into {cn:,.0f} after 09:50 and a 5-minute bar closes back below it with an upper wick over half its range",
                         "the close of that bar", f"5-minute close above {cn + 5:,.0f}, or two closes above {cn:,.0f}",
-                        "half the rise back (then the next shelf)", st, tx, (cn - last) if last is not None else None))
+                        "half the rise back (then the next shelf)", st, tx, (cn - last) if last is not None else None,
+                        key="A2-short", trigger_px=cn, trigger_rule=f"5-min close back BELOW {cn:,.0f} with an upper wick > ½ the bar",
+                        stop_px=cn + 5, target_px=(cn - rise / 2) if (rise is not None and rise >= 15) else None,
+                        ready=bool(rise is not None and rise >= 15),
+                        ready_note=(f"displacement {rise:.1f} / 15 pts" if rise is not None else "no bars yet")))
     # Archetype 1 — Positive only
     if 1 in el:
         st, tx = arm((last - c16) if last is not None else None)
         out.append(Play(1, "LONG CALLS", f"Half-EM fade at the −0.5 shelf {c16:,.2f}",
                         "probe within 3–5 pts of the shelf, two consecutive 5-minute closes hold, the third reverses toward the anchor on higher volume",
-                        "the close of the reversal bar", f"5-minute close below {c16 - 8:,.2f}", f"anchor {c15:,.2f} (exit within 3 pts, 100 %)", st, tx))
+                        "the close of the reversal bar", f"5-minute close below {c16 - 8:,.2f}", f"anchor {c15:,.2f} (exit within 3 pts, 100 %)", st, tx,
+                        (last - c16) if last is not None else None, key="A1-long", trigger_px=c16,
+                        trigger_rule=f"two closes holding {c16:,.2f}, then a reversal close up on higher volume",
+                        stop_px=c16 - 8, target_px=c15 - 3))
         st, tx = arm((c14 - last) if last is not None else None)
         out.append(Play(1, "LONG PUTS", f"Half-EM fade at the +0.5 shelf {c14:,.2f}",
                         "probe within 3–5 pts of the shelf, two consecutive 5-minute closes hold, the third reverses toward the anchor on higher volume",
-                        "the close of the reversal bar", f"5-minute close above {c14 + 8:,.2f}", f"anchor {c15:,.2f} (exit within 3 pts, 100 %)", st, tx))
+                        "the close of the reversal bar", f"5-minute close above {c14 + 8:,.2f}", f"anchor {c15:,.2f} (exit within 3 pts, 100 %)", st, tx,
+                        (c14 - last) if last is not None else None, key="A1-short", trigger_px=c14,
+                        trigger_rule=f"two closes holding {c14:,.2f}, then a reversal close down on higher volume",
+                        stop_px=c14 + 8, target_px=c15 + 3))
     # Archetype 3 — Balanced / Negative
     if 3 in el:
-        box = _box(rb) if not rb.empty else None
-        if box:
-            lo, hi = box
+        done = closed_bars if closed_bars is not None else (rb.iloc[:-1] if len(rb) > 1 else rb)   # completed bars only
+        done = session_bars(done) if done is not None and not done.empty else pd.DataFrame()
+        bx = done.tail(4) if not done.empty else done
+        if len(bx) == 4:
+            lo, hi = float(bx["low"].min()), float(bx["high"].max())
             w = hi - lo
             ok = w <= 0.2 * em
-            ups = sorted(x for x in (c13, c14, c15, c16, c17) if x > hi + 0.05 * em)
-            dns = sorted((x for x in (c13, c14, c15, c16, c17) if x < lo - 0.05 * em), reverse=True)
+            up_t, dn_t = hi + 0.05 * em, lo - 0.05 * em
+            levels = (c13, c14, c15, c16, c17)
+            ups = sorted(x for x in levels if x > up_t)
+            dns = sorted((x for x in levels if x < dn_t), reverse=True)
             tgt_up = ups[0] if ups else None
             tgt_dn = dns[0] if dns else None
+            box_d = {"lo": lo, "hi": hi, "width": w, "max_width": 0.2 * em, "start": bx.index[0].strftime("%H:%M"),
+                     "end": bx.index[-1].strftime("%H:%M"), "up_trigger": up_t, "dn_trigger": dn_t}
             cond_txt = (f"current 20-minute box {lo:,.2f}–{hi:,.2f} ({w:.2f} pts{' OK' if ok else ' — too wide, needs ≤ ' + f'{0.2 * em:.2f}'}). "
-                        f"Break: 5-minute close ≥ {hi + 0.05 * em:,.2f} (long) or ≤ {lo - 0.05 * em:,.2f} (short), SPY and QQQ outside their own boxes on the same bar")
-            st, tx = arm(min(abs(last - hi), abs(last - lo)) if last is not None else None, "" if ok else "box too wide for the rule")
-            out.append(Play(3, "LONG CALLS / LONG PUTS", "3-ticker breakout of the 20-minute box", cond_txt, "the close of the breakout bar",
+                        f"Break: 5-minute close ≥ {up_t:,.2f} (long) or ≤ {dn_t:,.2f} (short), SPY and QQQ outside their own boxes on the same bar")
+            side, key, trig, stp, tgt, dist, rule = "LONG CALLS / LONG PUTS", "A3", None, None, None, None, ""
+            if not ok:
+                st, tx = "blocked", f"box too wide for the rule ({w:.2f} > {0.2 * em:.2f} pts)"
+                if last is not None:
+                    dist = min(abs(last - hi), abs(last - lo))
+            elif last is None:
+                st, tx = "watch", "waiting for bars"
+            elif last > hi:
+                side, key, trig, stp, tgt = "LONG CALLS", "A3-long", up_t, hi, tgt_up
+                dist = up_t - last
+                rule = f"5-min close ≥ {up_t:,.2f} with SPY & QQQ above their box highs on the same bar"
+                st = "armed"
+                tx = (f"price {last:,.2f} is above the box high {hi:,.2f} — " +
+                      (f"{dist:.2f} pts short of the {up_t:,.2f} break" if dist > 0 else f"{-dist:.2f} pts through the {up_t:,.2f} break")
+                      + " — ARMED, wait for the qualifying 5-minute close")
+            elif last < lo:
+                side, key, trig, stp, tgt = "LONG PUTS", "A3-short", dn_t, lo, tgt_dn
+                dist = last - dn_t
+                rule = f"5-min close ≤ {dn_t:,.2f} with SPY & QQQ below their box lows on the same bar"
+                st = "armed"
+                tx = (f"price {last:,.2f} is below the box low {lo:,.2f} — " +
+                      (f"{dist:.2f} pts short of the {dn_t:,.2f} break" if dist > 0 else f"{-dist:.2f} pts through the {dn_t:,.2f} break")
+                      + " — ARMED, wait for the qualifying 5-minute close")
+            else:
+                st = "watch"
+                dist = min(up_t - last, last - dn_t)
+                tx = f"inside the box: {hi - last:.2f} pts to the high, {last - lo:.2f} pts to the low (break needs {0.05 * em:.2f} beyond)"
+            room = (tgt - trig) if (tgt is not None and trig is not None and key == "A3-long") else \
+                   (trig - tgt) if (tgt is not None and trig is not None and key == "A3-short") else None
+            ready = bool(ok and (room is None or room > 8.0) and not (key in ("A3-long", "A3-short") and tgt is None))
+            note = (f"room {room:.2f} pts to {tgt:,.2f}" if room is not None else "") if ready else \
+                   ("box too wide" if not ok else f"only {room:.2f} pts of room to {tgt:,.2f} (needs > 8)" if room is not None else "no EM level beyond the break")
+            out.append(Play(3, side, "3-ticker breakout of the 20-minute box", cond_txt, "the close of the breakout bar",
                             "5-minute close back inside the box (long: below the box high; short: above the box low)",
-                            f"next EM level: up {_f(tgt_up)} / down {_f(tgt_dn)} (needs > 8 pts of room)", st, tx))
+                            f"next EM level: up {_f(tgt_up)} / down {_f(tgt_dn)} (needs > 8 pts of room)", st, tx, dist,
+                            key=key, trigger_px=trig, trigger_rule=rule, stop_px=stp, target_px=tgt, ready=ready, ready_note=note,
+                            box=box_d))
         else:
             out.append(Play(3, "LONG CALLS / LONG PUTS", "3-ticker breakout of the 20-minute box",
                             f"all three close outside their last 20-minute box; SPX box ≤ {0.2 * em:.2f} pts, close ≥ {0.05 * em:.2f} outside, > 8 pts room to the next level",
-                            "the close of the breakout bar", "5-minute close back inside the box", "the next EM level", "watch", "waiting for four completed bars"))
+                            "the close of the breakout bar", "5-minute close back inside the box", "the next EM level", "watch", "waiting for four completed bars",
+                            key="A3", ready=False, ready_note="waiting for four completed bars"))
     # Archetype 4 — Negative only
     if 4 in el:
         st, tx = arm((c14 - last) if last is not None else None)
         out.append(Play(4, "LONG CALLS", f"1.0-EM runner through the +0.5 shelf {c14:,.2f}",
                         "two consecutive 5-minute closes above the shelf (the first on above-average volume), the next bar does not snap back",
-                        "the open of the second candle following acceptance", f"5-minute close back below {c14:,.2f}", f"+1.0 wall {c13:,.2f} on first contact, 100 %", st, tx))
+                        "the open of the second candle following acceptance", f"5-minute close back below {c14:,.2f}", f"+1.0 wall {c13:,.2f} on first contact, 100 %", st, tx,
+                        (c14 - last) if last is not None else None, key="A4-long", trigger_px=c14,
+                        trigger_rule=f"two 5-min closes ABOVE {c14:,.2f} (first on above-average volume), the next holds",
+                        stop_px=c14, target_px=c13))
         st, tx = arm((last - c16) if last is not None else None)
         out.append(Play(4, "LONG PUTS", f"1.0-EM runner through the −0.5 shelf {c16:,.2f}",
                         "two consecutive 5-minute closes below the shelf (the first on above-average volume), the next bar does not snap back",
-                        "the open of the second candle following acceptance", f"5-minute close back above {c16:,.2f}", f"−1.0 wall {c17:,.2f} on first contact, 100 %", st, tx))
+                        "the open of the second candle following acceptance", f"5-minute close back above {c16:,.2f}", f"−1.0 wall {c17:,.2f} on first contact, 100 %", st, tx,
+                        (last - c16) if last is not None else None, key="A4-short", trigger_px=c16,
+                        trigger_rule=f"two 5-min closes BELOW {c16:,.2f} (first on above-average volume), the next holds",
+                        stop_px=c16, target_px=c17))
     for p in out:
         p.entry = p.entry + f" · {size_txt}"
     return out
@@ -222,9 +296,9 @@ def exit_plan(r, last: Optional[float], now_min: int, lv: Dict[str, float]) -> L
 
 def banner(plan: Dict, lv: Dict[str, float], bars: pd.DataFrame, last: Optional[float], now_min: int, gate, live: Optional[Dict],
            chain: Optional[pd.DataFrame], locked: bool, chain_src: Optional[Dict] = None, session_ahead: bool = False,
-           past_session: bool = False) -> Banner:
+           past_session: bool = False, closed_bars: Optional[pd.DataFrame] = None) -> Banner:
     sizing = plan["sizing"]
-    plays = plays_for(plan, lv, bars, last, sizing)
+    plays = plays_for(plan, lv, bars, last, sizing, closed_bars)
     if session_ahead:                           # weekend or evening: the map is for the next session, whatever the clock says
         reg_name0 = ws.REGIME_SHORT[plan["regime"]]
         fav0 = {1: "Archetype 1 (Half-EM fade)", 2: "Archetype 2 (King Node absorption)", 3: "Archetype 4 (1.0-EM runner)"}[plan["regime"]]
@@ -279,7 +353,8 @@ def banner(plan: Dict, lv: Dict[str, float], bars: pd.DataFrame, last: Optional[
         return Banner("SHUTDOWN", "neutral", "DESK CLOSED — dead zone, no new positions", "Watch Day. Screens off.", [], cred, notes)
     if now_min >= T_LAST_QUALIFYING:
         return Banner("STAND_DOWN", "neutral", "STAND DOWN — no qualifying bar closed by 11:05", "Watch Day: capital intact, discipline score intact. Flat by 11:30.", [], cred, notes)
-    armed = [p for p in plays if p.status == "armed"]
+    armed = sorted((p for p in plays if p.status == "armed"),
+                   key=lambda p: (not p.ready, abs(p.distance) if p.distance is not None else 9e9))   # ready + nearest first
     gtxt = ""
     if gate and gate.status in ("acceptance", "trap"):
         gtxt = (" 09:50 said ACCEPTANCE → momentum plays first (A3/A4)." if gate.status == "acceptance" else " 09:50 said TRAP → the fades first (A1/A2).")

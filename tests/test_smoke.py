@@ -40,8 +40,12 @@ from utils import lwchart as LW  # noqa: E402
 from utils.text import strike_grid_post  # noqa: E402
 from views import common as U  # noqa: E402
 
+from utils.timeutil import prev_trading_day  # noqa: E402
+
 ET = ZoneInfo("America/New_York")
-SESS = date(2026, 10, 1)
+# B-31: the demo feeds only cover recent days, so the fixture session is the last trading day before today (was a fixed
+# 2026-10-01, which stopped building a plan in demo mode from mid-October)
+SESS = prev_trading_day(datetime.now(ET).date())
 
 
 def _plan():
@@ -134,6 +138,51 @@ def test_stylesheet_formats_for_both_themes():
     for name in ("dark", "light"):
         css = U.CSS_BASE % U.THEME_VARS[name]
         assert "bannerpulse" in css and "%(" not in css
+
+
+def test_live_snapshot_state_cards_alerts_and_meic():
+    """1.8.0: the shared snapshot builds in demo mode; every state card, the MEIC card and the alert payloads render as
+    one-line HTML; the alert engine script is well-formed."""
+    import dataclasses
+    from core import meic as MC
+    from views import alerts as ALV, cards as K, live as LVW
+    cfg = {"session": SESS, "c8": 25000.0, "c9": 1.0, "c27": 8.0, "c28": 0.55, "vix_print": "08:15", "es_print": "08:20",
+           "overrides": {}, "macro": "", "auto": True, "c10": None, "candles": False, "overnight": True,
+           "engine": "TradingView lightweight", "poll": 60, "price_symbol": "CAPITALCOM:SPX500", "rules_feed": "SPX cash 5-min (book)",
+           "candle_opacity": 0.7, "sound": True, "notify": True, "interval": "1-minute", "alert_armed": True, "alert_meic": True}
+    s = LVW.snapshot(cfg)
+    assert s.ok and s.banner is not None and s.ticket and LVW.snapshot(cfg) is s          # memoised within the poll
+    size = LVW.size_text(s.plan)
+    out = [K.state_card(s, size), K.mini_status(s)]
+    trade = {"archetype": 3, "side": "long", "trigger_time": "10:45", "entry": 7735.54, "stop": 7729.95, "target": 7754.69,
+             "risk_pts": 5.59, "resolution": "open", "exit_time": None, "exit_price": None, "r_multiple": None, "pnl_pts": None}
+    act = dataclasses.replace(s, banner=X.Banner("ACTIVE", "active", "TRADE ACTIVE", "x", [], "credit", ["n"], trade, ["STOP · x", "TARGET · y"]),
+                              last=7741.2, m=10 * 60 + 52)
+    out.append(K.state_card(act, size))
+    done_t = dict(trade, resolution="stopped", exit_time="10:55", exit_price=7728.1, r_multiple=-1.33, pnl_pts=-7.44)
+    done = dataclasses.replace(s, banner=X.Banner("DONE", "done", "DAY DONE", "x", [], "credit", ["Stopped: ..."], done_t))
+    out.append(K.state_card(done, size))
+    p = X.Play(3, "LONG CALLS", "3-ticker", "cond", "entry", "stop", "target", "armed", "txt", 1.2, key="A3-long", trigger_px=7733.5,
+               trigger_rule="close ≥ 7733.50", stop_px=7729.95, target_px=7754.69,
+               box={"lo": 7714.27, "hi": 7729.95, "width": 15.68, "max_width": 16.85, "start": "10:25", "end": "10:40", "up_trigger": 7733.5, "dn_trigger": 7710.0})
+    arm = dataclasses.replace(s, banner=X.Banner("ARMED", "go", "ARMED", "x", [p], "credit"), last=7731.4,
+                              three={"SPX": None, "SPY": None, "QQQ": None})
+    out.append(K.state_card(arm, size))
+    for st_ in ("PREMARKET", "LOCKED", "GATE", "WATCHING", "STAND_DOWN", "SHUTDOWN", "SETTLE"):
+        out.append(K.state_card(dataclasses.replace(s, banner=X.Banner(st_, "neutral", "head", "sub", [p], "credit")), size))
+    t = s.ticket
+    pay = MC.payoff_points(t, None)
+    out.append(K.meic_card(s, t, pay, MC.priced(t, None, 250.0), MC.defense_status(t["anchor"], t), None, "n/a", True))
+    out.append(K.meic_rules_card(t, MC.defense_status(t["anchor"], t), 17.0, None, True))
+    for h in out:
+        assert h.startswith("<div") and "\n" not in h and "None" not in h.replace("display:none", ""), h[:200]
+    from core import alerts as AL
+    e = AL.Event("k", "trigger", "trigger", True, "TRADE TRIGGERED", "S3 — LONG CALLS", "</script><b>x", datetime.now(ET))
+    js = ALV._dispatch_html(ALV._payload([e], cfg, SESS.isoformat()))
+    assert js.count("</script>") == 1 and "<\\/script>" in js                       # payload cannot close the tag
+    w = ALV._enable_widget_html()
+    assert "__azrael" in w and "requestPermission" in w and w.count("<script>") == 1
+    assert ALV.evaluate(cfg, s) == [] or s.today                                        # alerts only for the live session
 
 
 def test_journal_roundtrip_and_stats():

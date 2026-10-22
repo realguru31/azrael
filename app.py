@@ -18,14 +18,18 @@ st.set_page_config(page_title=f"Azraël Desk v{__version__} — SPX 1-Trade-Per-
 logging.basicConfig(level=logging.INFO)
 
 from views import common as U                       # noqa: E402
-from views import desk, premarket, scenario_view, credit_view, journal_view, audit_view, knowledge   # noqa: E402
+from views import desk, premarket, scenario_view, credit_view, journal_view, audit_view, knowledge, meic_view   # noqa: E402
+from views import alerts as AL                      # noqa: E402
 
 U.APP_VERSION = __version__
 U.setup()
 U.configure_storage()
+watch_slot = st.sidebar.container()                 # live status + alerts, top of the sidebar on every page
 cfg = U.settings()
 
 plan, label = U.get_plan(cfg)
+with watch_slot:
+    AL.watch(cfg)
 
 
 def _page(fn):
@@ -38,6 +42,7 @@ pages = [
     st.Page(_page(desk.render), title="Desk", icon="🖥️", default=True, url_path="desk"),
     st.Page(_page(premarket.render), title="Premarket math", icon="📐", url_path="premarket"),
     st.Page(_page(scenario_view.render), title="Scenario & trade card", icon="🗺️", url_path="scenario"),
+    st.Page(_page(meic_view.render), title="MEIC condor desk", icon="🦅", url_path="meic"),
     st.Page(_page(credit_view.render), title="Credit spread vault", icon="🏦", url_path="credit"),
     st.Page(_page(journal_view.render), title="Trade journal", icon="📓", url_path="journal"),
     st.Page(_page(audit_view.render), title="Settlement audit", icon="🧾", url_path="audit"),

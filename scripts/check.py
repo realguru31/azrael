@@ -17,7 +17,7 @@ for f in glob.glob("**/*.py", recursive=True):
         if re.search(r'f"([^"\\]|\\.)*\{[^}]*"[^}]*\}', line) or re.search(r"f'([^'\\]|\\.)*\{[^}]*'[^}]*\}", line):
             fails.append(f"{f}:{i} nested same-quote f-string (Python 3.12 only)")
 print("syntax:", "OK" if not fails else "\n".join(fails))
-for t in ("tests/test_core.py", "tests/test_smoke.py"):
+for t in ("tests/test_core.py", "tests/test_smoke.py", "tests/test_live.py"):
     r = subprocess.run([sys.executable, t], capture_output=True, text=True)
     ok = r.returncode == 0
     print(f"{t}: {'OK' if ok else 'FAIL'}")

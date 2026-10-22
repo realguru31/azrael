@@ -1,82 +1,62 @@
 # Changelog
 All notable changes to the Azraël Desk app. Format: Keep a Changelog; versions are semantic.
 
-## [1.5.0] — 2026-10-03
+## [1.8.0] — 2026-10-22
+Firing, stop, target, window and eligibility rules are untouched: `core/rules.py`, `core/scoring.py`, `core/audit.py`,
+`core/workstation.py`, `core/plan.py`, `core/credit.py` and the data layer are byte-identical to 1.7.2. Every change
+below is plumbing (what data the live engine sees, how fast) and presentation.
+### Fixed — alerts and live freshness
+- **Feeds refreshed only every 5 minutes, whatever the poll.** The cached loaders took the poll bucket as `_b`, and
+  `st.cache_data` never hashes arguments whose name starts with `_`, so the bucket never reached the cache key: bars,
+  the live price and the chain came from the 300 s TTL. The desk could run up to 5 minutes behind the market (so did
+  triggers and alerts) and "↻ Refresh now" re-ran on stale data. The bucket is now a real key argument: bars and price
+  once per poll, the chain at most every 2 minutes, the plan every 5 minutes (its 1.7.x cadence), all on Refresh now.
+- **Live engine read the bar that was still forming.** tvDatafeed returns the forming 5-minute bar as the last row; the
+  rules ran on it as if closed, so a half-built bar could trigger (ACTIVE, with the wrong entry price), stop (DONE)
+  or vanish on the next poll (ACTIVE ↔ ARMED flicker, alerts for trades that never happened). The live engine now sees
+  only what is final when the feed was read: closed bars, plus the forming bar's OPEN (S4 enters on the open of the
+  second candle after acceptance). Stops and triggers therefore fire on the 5-minute close, exactly as written; the
+  settlement audit (complete sessions) is unaffected. `core/live.py`.
+- **ARMED meant nothing for S3.** It armed whenever price was within 10 pts of a box edge — almost always, since the
+  box is at most 0.2 EM wide — and every flap re-alerted. S3 is now ARMED when price is outside the 20-minute box
+  (the next close could be the break); S1/S2/S4 keep the 10-pt rule; S2 alerts only once its 15-pt displacement exists.
+- **No sound, no notifications, nothing off the Desk page.** Alerts lived in the Desk fragment (nothing fired on other
+  pages); each beep created a new AudioContext inside a fresh zero-height iframe that never had a user gesture (browsers
+  keep it muted); notifications were requested the same way (never granted); the first state after a page load was
+  swallowed; dedupe was by state name. Now: a watcher in the sidebar on every page; alerts keyed per occurrence and
+  fired once (stale facts skipped when a page opens, ARMED at most every 15 minutes per play); one engine installed in
+  the app window (Web Audio unlocked by your first click, desktop notifications allowed from the "🔔 Enable alerts"
+  button, cards that stay on screen for triggers/exits, tab-title flash, per-day dedupe across reloads and tabs).
+  Distinct tones: trigger, exit, armed, MEIC defense. Live TARGET TOUCHED and STOP AT RISK (the close decides) alerts.
 ### Added
-- Trade markers on their own series so the arrow tip sits ON the entry price (arrowDown from above for a short, arrowUp
-  from below for a long); exit markers at the exit price: green circle on a target touch, red circle on a stop-out,
-  grey square at the 11:30 flat, each with the R; a yellow ARMED square over the live candle with the distance to the trigger.
-- 1-minute / 5-minute candle toggle (sidebar). On the 1-minute view the entry/exit markers, lines and bands are placed
-  at the 5-minute bar's close (e.g. the "10:50 bar" at 10:55); on the 5-minute view the trigger bar is one candle.
-- Files: `utils/lwchart.py`, `utils/charts.py`, `views/common.py`, `views/desk.py`.
-
-## [1.4.1] — 2026-10-03
-### Fixed
-- Status strip showed only its second row: the iframe component was being clipped by the browser. Replaced with two
-  plain inline lines in the page itself (no iframe, no flex layout) — nothing left that can collapse or scroll.
-- Files: `views/common.py`, `tests/test_smoke.py`.
-
-## [1.4.0] — 2026-10-03
-### Fixed
-- Top strip hidden on fresh load: the page content started under Streamlit's fixed header (padding 0.8rem + opaque header).
-  Content now starts below the header (4.5rem).
-### Added
-- Stop and target made execution-grade on every chart: TradingView main chart draws a red risk band (entry→stop) and a
-  green reward band (entry→target) over the trade window with thick labelled lines ("STOP 7,742.58 · −1R · 5-min close",
-  "TARGET 7,705.28 · +8.03R"); the Plotly main chart and the settlement-audit chart draw the same bands and labels.
-- ACTIVE banner: the desk's late-entry rule (valid only within 0.5R of the trigger close; beyond that, pass).
-- Weekend / evening: the banner reads "NEXT SESSION — provisional map" instead of a clock-driven state.
-- No change to any firing or stop rule (verified verbatim against the manual and the desk audits).
-- Files: `views/common.py`, `utils/lwchart.py`, `utils/charts.py`, `views/desk.py`, `core/execution.py`.
-
-## [1.3.0] — 2026-10-02
-### Added
-- EXIT PLAN block in the ACTIVE banner: the archetype's written exits (target · stop · divergence/reversal · 11:30 time
-  stop) with live distances, nearest first.
-- "Log my exit" under the banner (price, time, note) → saved on the session card and pre-filled into the journal's
-  Exit Price; shows your points and R on the rule's stop.
-### Fixed
-- Status strip rendered as a self-contained component (own CSS, fixed two rows) outside any column, so Streamlit's
-  re-layout inside fragments can no longer collapse its items; refresh button on its own line at natural width.
-- Settlement audit before 16:00 no longer invents a settlement from the last print: header reads "LIVE — session not
-  settled", no dot, no verification line; Save disabled until the close.
-- Files: `core/execution.py`, `core/audit.py`, `views/audit_view.py`, `views/common.py`, `views/desk.py`,
-  `views/credit_view.py`, `views/premarket.py`, `views/journal_view.py`, `data/storage.py`.
-
-## [1.2.2] — 2026-10-02
-### Fixed
-- App failed to start: the banner pulse keyframes (`0%`, `70%`, `100%`) inside the %-formatted stylesheet raised
-  "not enough arguments for format string". Percent signs escaped; the smoke test now renders the stylesheet for both themes.
-- Files: `views/common.py`, `tests/test_smoke.py`.
-
-## [1.2.1] — 2026-10-02
-### Fixed
-- The chain source/reason was a module-wide variable shared by every page and session: rebuilding yesterday's map on the
-  Settlement audit page (expired expiry → "HTTP 200 but no contracts for 2026-10-01") overwrote the note the Desk shows,
-  producing a false "CHAIN NOT ON BARCHART" tag while the Desk's own chain was live. The source now travels with each
-  chain result (`get_chain_with_source`); the Feeds line shows the source now and at lock.
-- Files: `data/fetcher.py`, `core/plan.py`, `core/execution.py`, `views/common.py`, `views/desk.py`, `views/credit_view.py`, `views/premarket.py`.
-
-## [1.2.0] — 2026-10-02
-### Added
-- Live fragments: the Desk, Credit vault and Premarket live blocks re-run on their own every poll interval and carry a
-  "↻ Refresh now" button that re-pulls feeds for that block only. The previous auto-refresh was wired to an empty
-  fragment and did not update the page.
-- Alerts on banner state change (LOCKED, GATE, WATCHING, ARMED, ACTIVE, DONE, STAND DOWN): toast, flashing browser-tab
-  title, optional two-tone beep and browser notification (sidebar toggles, `desk_settings.toml` keys `sound`, `notify`).
-- Chart overlays: armed plays draw their trigger level as a thick pulsing line with an ARMED box; a live trade draws
-  entry / stop / target lines and a marker on the trigger bar (TradingView and Plotly engines). Banner pulses while armed.
-- Audit: Microstructure Lesson generated from the nearest miss on a Watch Day (desk style).
-### Fixed
-- Lightweight chart time axis collapsed empty time (10:58 → 16:00); every minute of the window is now reserved.
-- Right-edge labels on the Plotly chart overprinted when levels sat within a point; now staggered.
-- ACTIVE/DONE line shows the XSP/SPY size when SPX sizes to zero.
-- Stale "CBOE" labels removed (credit heading, node-map title, chart legends, scenario and grid OI note, comments).
-- Lock bot: retry crons at :41 and :56 UTC (guard skips once the lock exists).
-### Files
-- `views/desk.py`, `utils/lwchart.py`, `views/common.py`, `views/credit_view.py`, `views/premarket.py`, `app.py`,
-  `core/execution.py`, `core/audit.py`, `utils/charts.py`, `core/scenario.py`, `utils/text.py`, `core/plan.py`,
-  `.github/workflows/lock_0830.yml`, `desk_settings.example.toml`.
+- **Desk cards in the desk's own visual language.** TRADE ACTIVE = the #live-trade-ideas "LIVE EXECUTION ALERT" card:
+  entry / structural stop / 1R / target / 11:30 tiles, a stop→target track with the live price and R, exit plan, the
+  ten-check scorecard as bars. ARMED = trigger level, live distance, stop and target if it fires, bar-close countdown,
+  live 3-ticker alignment for S3, VIX-gated playbook status. SETUP RESOLVED card for the result. The other states stay
+  two lines. The chart draws S3's break level and box edges when armed. `views/cards.py`.
+- **MEIC condor desk tab** — the 09:50 ticket exactly as the desk posts it: short strikes AT the ±1.25 EM fence strikes,
+  10-wide wings, 5-pt defense triggers 5 inside (matches every posted ticket: Oct 16, 19, 20, 21), the regime mandate
+  (Balanced/Negative verbatim), payoff cage with the live SPX print, live mids and Row-29 sizing at the regime factor,
+  opening options flow, live defense distances, regime-flip monitor, and Azraël's post-11:30 range-condor test (Oct 8).
+  Defense and regime-flip alerts run on every page from 09:50 to the close. `core/meic.py`, `views/meic_view.py`.
+- Sidebar on every page: live desk status, MEIC defense distances, recent alerts, alert switches (sound, desktop,
+  ARMED heads-up, MEIC defense).
+### Changed
+- Embedded HTML (chart, alert engine) goes through `st.iframe` when the installed Streamlit has it (components.v1.html is
+  deprecated, removal announced after 2026-06-01; Community Cloud installs the newest Streamlit at each reboot).
+- `requirements.txt`: `pyarrow<26` — pyarrow 26 refuses NumPy 1.x at import and NumPy is pinned at 1.26.4; a fresh
+  build would otherwise crash every page with a table (journal, credit vault).
+- Desktop notifications default on (the browser permission is the real gate); desk_settings.toml `[alerts]` keys.
+- Credit spread vault notes the desk ticket's at-the-fence strikes. Changelog: duplicated 1.2.0–1.5.0 block removed.
+- Tests: `tests/test_live.py` (forming-bar fakeout and stop, S4 open entry, engine identical once bars close, S3 arming,
+  MEIC ticket = the four desk tickets, range-condor test, alert once/stale/cooldown, defense and flip); smoke test
+  renders every card; B-31 fixed (fixture date relative to today).
+- Files: `app.py`, `core/execution.py`, `core/live.py` (new), `core/alerts.py` (new), `core/meic.py` (new),
+  `views/common.py`, `views/desk.py`, `views/live.py` (new), `views/cards.py` (new), `views/alerts.py` (new),
+  `views/meic_view.py` (new), `views/credit_view.py`, `requirements.txt`, `desk_settings.example.toml`,
+  `scripts/check.py`, `tests/test_smoke.py`, `tests/test_live.py` (new), `VERSION`, `CHANGELOG.md`.
+### Not changed (open, for your call)
+- B-30 (Path-check tolerance claimed in the 1.7.2 notes but not in the code) is still not applied.
 
 ## [1.7.2] — 2026-10-09
 ### Changed

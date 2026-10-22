@@ -54,6 +54,8 @@ def _render(cfg):
                  f"(Strike Walls {m['upper_strike_wall']:,.0f} / {m['lower_strike_wall']:,.0f})")
         st.markdown("**Convention 2 — desk bot fences (±1.25 EM):** short wings strictly beyond")
         st.write(f"short call above {sg['call_fence']:,.0f} (first strike {sg['call_fence'] + 5:,.0f}) · short put below {sg['put_fence']:,.0f} (first strike {sg['put_fence'] - 5:,.0f})")
+        st.caption(f"The desk's own 09:50 MEIC ticket sells AT the fence strikes — {sg['put_fence']:,.0f}P / {sg['call_fence']:,.0f}C, 10-wide, "
+                   f"defense triggers {sg['put_fence'] + 5:,.0f} / {sg['call_fence'] - 5:,.0f} — see the MEIC condor desk page.")
         if gap["active"]:
             st.markdown(f"**Gap day active (C10):** fences shift to C45 {gap['c45']:,.0f} / C46 {gap['c46']:,.0f} — do not sell the standard walls into a gap.")
         st.caption("Never sell premium between the King Nodes on a two-way day; in Balanced Gamma the desk says spreads are viable after 11:30 once a range between the nodes is confirmed.")

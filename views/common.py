@@ -20,7 +20,8 @@ from utils.timeutil import (ET, current_phase, fmt_hm, fmt_session_title, is_tra
 CSS_BASE = """
 <style>
 @import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap');
-:root { --bg:%(bg)s; --panel:%(panel)s; --panel2:%(panel2)s; --border:%(border)s; --text:%(text)s; --muted:%(muted)s; --num:%(num)s; }
+:root { --bg:%(bg)s; --panel:%(panel)s; --panel2:%(panel2)s; --border:%(border)s; --text:%(text)s; --muted:%(muted)s; --num:%(num)s;
+        --az-card:%(az_card)s; --az-tile:%(az_tile)s; --az-line:%(az_line)s; --az-text:%(az_text)s; --az-muted:%(az_muted)s; --az-track:%(az_track)s; }
 html, body, [class*="css"] { font-family: 'IBM Plex Sans', system-ui, sans-serif; }
 .stApp, .stApp > header, [data-testid="stAppViewContainer"], [data-testid="stHeader"] { background: var(--bg) !important; color: var(--text) !important; }
 [data-testid="stSidebar"], [data-testid="stSidebar"] > div { background: var(--panel) !important; }
@@ -59,8 +60,10 @@ div[data-testid="stMetricValue"] { font-family:'IBM Plex Mono', monospace; }
 </style>
 """
 THEME_VARS = {
-    "dark": {"bg": "#0e1117", "panel": "#16213e", "panel2": "#1a2a4a", "border": "#263653", "text": "#e0e0e0", "muted": "#a0a0a0", "num": "#ffffff"},
-    "light": {"bg": "#ffffff", "panel": "#f3f5f8", "panel2": "#e9edf2", "border": "#d4dae2", "text": "#1f2937", "muted": "#5b6672", "num": "#111827"},
+    "dark": {"bg": "#0e1117", "panel": "#16213e", "panel2": "#1a2a4a", "border": "#263653", "text": "#e0e0e0", "muted": "#a0a0a0", "num": "#ffffff",
+             "az_card": "#0f1629", "az_tile": "#0b1222", "az_line": "#1f2b45", "az_text": "#e5e7eb", "az_muted": "#94a3b8", "az_track": "#1a2540"},
+    "light": {"bg": "#ffffff", "panel": "#f3f5f8", "panel2": "#e9edf2", "border": "#d4dae2", "text": "#1f2937", "muted": "#5b6672", "num": "#111827",
+              "az_card": "#ffffff", "az_tile": "#f5f7fb", "az_line": "#d9e0ea", "az_text": "#111827", "az_muted": "#5b6672", "az_track": "#e3e8f0"},
 }
 
 REFRESH_SECONDS = 60
@@ -87,13 +90,13 @@ def theme_name() -> str:
 
 def setup() -> None:
     from utils import charts as _C
+    from views import cards as _K
     name = theme_name()
     st.markdown(CSS_BASE % THEME_VARS[name], unsafe_allow_html=True)
+    st.markdown(_K.CARD_CSS, unsafe_allow_html=True)            # not %-formatted (keyframes/percentages are safe here)
     _C.set_theme(name)
-    if st.session_state.get("set_notify") and not st.session_state.get("_notify_asked"):
-        import streamlit.components.v1 as _cmp
-        _cmp.html("<script>try{if(window.Notification&&Notification.permission==='default'){Notification.requestPermission();}}catch(e){}</script>", height=0)
-        st.session_state["_notify_asked"] = True
+    # Notification permission is requested by the 'Enable sound & desktop alerts' button (views/alerts.py): browsers only
+    # honour the request from a real click, which a zero-height script iframe never had.
 
 
 # ── secrets ───────────────────────────────────────────────────────────────────
@@ -171,8 +174,9 @@ DEFAULTS = {"c8": float(_A.get("c8", 25000.0)), "c9": float(_A.get("c9", 1.0)), 
             "candles": bool(_C.get("candles", False)), "overnight": True, "engine": _C.get("engine", "TradingView lightweight"),
             "poll": int(_F.get("poll_seconds", 60)), "price_symbol": _F.get("price_symbol", "CAPITALCOM:SPX500"),
             "rules_feed": _F.get("rules_feed", "SPX cash 5-min (book)"), "cboe_fallback": bool(_F.get("cboe_fallback", True)),
-            "candle_opacity": float(_C.get("candle_opacity", 0.7)), "sound": bool(_C.get("sound", True)), "notify": bool(_C.get("notify", False)),
-            "interval": _C.get("interval", "1-minute")}
+            "candle_opacity": float(_C.get("candle_opacity", 0.7)), "sound": bool(_C.get("sound", True)), "notify": bool(_C.get("notify", True)),
+            "interval": _C.get("interval", "1-minute"),
+            "alert_armed": bool(_US.get("alerts", {}).get("armed", True)), "alert_meic": bool(_US.get("alerts", {}).get("meic_defense", True))}
 
 
 def settings() -> Dict:
@@ -201,8 +205,17 @@ def settings() -> Dict:
                  help="1-minute = most detail (default). 5-minute = the same bars the rules are measured on; the trigger bar is one candle.")
         st.checkbox("Candlesticks instead of closes line", key="set_candles")
         st.slider("Candle opacity", 0.1, 1.0, step=0.05, key="set_candle_opacity")
-        st.checkbox("🔔 Sound on state change", key="set_sound", help="Two-tone beep when the banner changes state (armed, trigger, done…). Browsers allow sound only after you have clicked somewhere on the page once.")
-        st.checkbox("Browser notifications", key="set_notify", help="Desktop notification on state change; the browser asks for permission once.")
+        st.markdown("### Alerts")
+        st.checkbox("🔔 Sound", key="set_sound",
+                    help="Distinct tones for: trade triggered, exit (target / stop / 11:30), ARMED heads-up, MEIC defense. Browsers only "
+                         "play sound once you have clicked the page — press '🔔 Enable alerts' at the top of the sidebar once per tab.")
+        st.checkbox("Desktop notifications", key="set_notify",
+                    help="System notifications for the 09:50 gate, triggers, exits and MEIC defense. Allow them with the Enable button at the top of the sidebar.")
+        st.checkbox("Alert when a play is ARMED", key="set_alert_armed",
+                    help="Heads-up when price reaches a trigger zone (S3: price outside the 20-minute box; S1/S2/S4: within 10 pts of the level "
+                         "with the setup's preconditions met). Once per play, then at most every 15 minutes. Nothing fires before 09:50.")
+        st.checkbox("MEIC 5-pt defense alerts", key="set_alert_meic",
+                    help="After 09:50: alert when SPX comes within 5 pts of a short strike on today's MEIC ticket, and on a VIX regime flip above 18.5.")
         with st.expander("Feed timing · overrides", expanded=False):
             st.selectbox("VIX print used for C6", ["08:15", "08:30"], key="set_vix_print",
                          help="Desk bot: the 08:15 AM ET print. Manual: the live quote at 08:30.")
@@ -236,8 +249,24 @@ def settings() -> Dict:
             "price_symbol": (st.session_state.get("set_price_symbol") or "CAPITALCOM:SPX500").strip().upper(),
             "rules_feed": st.session_state.get("set_rules_feed", "SPX cash 5-min (book)"),
             "candle_opacity": float(st.session_state.get("set_candle_opacity", 0.7)),
-            "sound": bool(st.session_state.get("set_sound", True)), "notify": bool(st.session_state.get("set_notify", False)),
-            "interval": st.session_state.get("set_interval", "1-minute")}
+            "sound": bool(st.session_state.get("set_sound", True)), "notify": bool(st.session_state.get("set_notify", True)),
+            "interval": st.session_state.get("set_interval", "1-minute"),
+            "alert_armed": bool(st.session_state.get("set_alert_armed", True)), "alert_meic": bool(st.session_state.get("set_alert_meic", True))}
+
+
+def html_frame(html: str, height: int, scrolling: bool = False):
+    """Same-origin HTML iframe (the chart, the alert engine). Streamlit deprecates components.v1.html in favour of
+    st.iframe (announced removal after 2026-06-01) and Community Cloud installs the newest Streamlit at every reboot, so
+    use st.iframe when this Streamlit has it — same sandbox (allow-same-origin, allow-scripts, autoplay) — and fall back
+    to components.v1.html on older versions."""
+    fn = getattr(st, "iframe", None)
+    if fn is not None:
+        try:
+            return fn(html, height=max(int(height), 1))
+        except TypeError:
+            pass
+    import streamlit.components.v1 as _components
+    return _components.html(html, height=height, scrolling=scrolling)
 
 
 def bucket(seconds: Optional[int] = None) -> int:
@@ -258,28 +287,62 @@ def refresh_button(key: str) -> None:
 
 
 # ── cached feeds ──────────────────────────────────────────────────────────────
+def _stamp(res: Tuple[Optional[pd.DataFrame], str]) -> Tuple[Optional[pd.DataFrame], str]:
+    """Record when the feed was read: the live engine uses it to drop the bar that was still forming (core/live.py)."""
+    df, src = res
+    if df is not None:
+        df.attrs["fetched_at"] = time.time()
+    return df, src
+
+
+# 1.8.0 — the poll bucket now really is part of the cache key. st.cache_data does NOT hash arguments whose name starts
+# with "_", so the old `_b` bucket never reached the key: every feed refreshed only when the 300 s TTL expired (the desk
+# could run up to 5 minutes behind the market, triggers and alerts with it) and "↻ Refresh now" re-ran on stale data.
+# The public names and signatures are unchanged; the cached workers take a hashed `b`.
 @st.cache_data(ttl=300, show_spinner=False)
-def bars(key: str, interval: str, n: int, _b: int) -> Tuple[Optional[pd.DataFrame], str]:
-    return F.get_bars(key, interval, n, tv_creds())
+def _bars_cached(key: str, interval: str, n: int, b: int) -> Tuple[Optional[pd.DataFrame], str]:
+    return _stamp(F.get_bars(key, interval, n, tv_creds()))
+
+
+def bars(key: str, interval: str, n: int, _b: Optional[int] = None) -> Tuple[Optional[pd.DataFrame], str]:
+    """Bars for a feed key, fetched once per poll (the bucket) and shared by every page and session in that poll."""
+    return _bars_cached(key, interval, n, bucket() if _b is None else int(_b))
 
 
 @st.cache_data(ttl=300, show_spinner=False)
-def price_bars(ticker: str, interval: str, n: int, _b: int) -> Tuple[Optional[pd.DataFrame], str]:
-    return F.get_symbol_bars(ticker, interval, n, tv_creds())
+def _price_bars_cached(ticker: str, interval: str, n: int, b: int) -> Tuple[Optional[pd.DataFrame], str]:
+    return _stamp(F.get_symbol_bars(ticker, interval, n, tv_creds()))
 
 
-@st.cache_data(ttl=300, show_spinner=False)
-def build_plan(session_iso: str, vix_print: str, es_print: str, c8: float, c9: float, c27: float, c28: float,
-               overrides_json: str, c10: Optional[float], _b: int) -> Dict:
+def price_bars(ticker: str, interval: str, n: int, _b: Optional[int] = None) -> Tuple[Optional[pd.DataFrame], str]:
+    return _price_bars_cached(ticker, interval, n, bucket() if _b is None else int(_b))
+
+
+@st.cache_data(ttl=600, show_spinner=False)
+def _build_plan_cached(session_iso: str, vix_print: str, es_print: str, c8: float, c9: float, c27: float, c28: float,
+                       overrides_json: str, c10: Optional[float], b: int, price_symbol: str) -> Dict:
     return P.build_plan(date.fromisoformat(session_iso), vix_print, es_print, c8, c9, c27, c28,
-                        json.loads(overrides_json), tv_creds(), c10,
-                        (st.session_state.get("set_price_symbol") or "CAPITALCOM:SPX500").strip().upper())
+                        json.loads(overrides_json), tv_creds(), c10, price_symbol)
+
+
+def build_plan(session_iso: str, vix_print: str, es_print: str, c8: float, c9: float, c27: float, c28: float,
+               overrides_json: str, c10: Optional[float], _b: Optional[int] = None) -> Dict:
+    """The plan inputs move slowly (prior close, 08:15/08:20 prints, chain at the lock): rebuilt every 5 minutes or on
+    'Refresh now' — the effective cadence of 1.7.x, now intentional."""
+    return _build_plan_cached(session_iso, vix_print, es_print, c8, c9, c27, c28, overrides_json, c10, bucket(300),
+                              (st.session_state.get("set_price_symbol") or "CAPITALCOM:SPX500").strip().upper())
 
 
 @st.cache_data(ttl=300, show_spinner=False)
-def chain(expiry: str, underlying: str, _b: int) -> Tuple[Optional[pd.DataFrame], Dict[str, str]]:
-    """(chain, source) for one expiry — the source is bound to this result, not to a global."""
-    return F.get_chain_with_source(expiry, underlying, bool(st.session_state.get("set_cboe_fallback", True)))
+def _chain_cached(expiry: str, underlying: str, b: int, allow_fallback: bool) -> Tuple[Optional[pd.DataFrame], Dict[str, str]]:
+    return F.get_chain_with_source(expiry, underlying, allow_fallback)
+
+
+def chain(expiry: str, underlying: str, _b: Optional[int] = None) -> Tuple[Optional[pd.DataFrame], Dict[str, str]]:
+    """(chain, source) for one expiry — the source is bound to this result, not to a global. Refreshed every poll but at
+    most every 2 minutes (Barchart), and on 'Refresh now'."""
+    poll = int(st.session_state.get("set_poll", REFRESH_SECONDS) or REFRESH_SECONDS)
+    return _chain_cached(expiry, underlying, bucket(max(120, poll)), bool(st.session_state.get("set_cboe_fallback", True)))
 
 
 def chain_note(src: Optional[Dict[str, str]] = None) -> str:
@@ -351,7 +414,7 @@ def status_bar(plan: Dict, label: str, session: date) -> None:
     """Two plain inline lines (no iframe, no flex, nothing collapsible): prices on the first, session/lock/version on the
     second. Each item is an inline chip; the lines wrap normally if the window is narrow."""
     sym = (st.session_state.get("set_price_symbol") or "CAPITALCOM:SPX500").strip().upper()
-    px1, src = price_bars(sym, "1", 300, bucket())
+    px1, src = price_bars(sym, "1", 1400, bucket())          # same request as the Desk chart -> one fetch per poll, shared
     last, last_t = F.latest(px1)
     i = plan.get("inputs", {}) if plan.get("ok") else {}
     c5 = i.get("c5")

@@ -1,6 +1,31 @@
 # Changelog
 All notable changes to the Azraël Desk app. Format: Keep a Changelog; versions are semantic.
 
+## [1.8.1] — 2026-10-22
+Rules, scoring and the audit's logic are unchanged (core/rules.py, core/scoring.py, core/audit.py byte-identical).
+### Added
+- **⬇ Download today's data** — sidebar, every page (today's session, all day and after the close) — and **⬇ Download
+  this session's data** on the Settlement audit page (any date). One zip:
+  - the exact bars the desk read: SPX / SPY / QQQ 5-min, SPX 1-min, VIX 1- and 5-min, the price feed, SPX daily;
+  - the 08:30 map and the options chain snapshot;
+  - every live decision: card state, book trade, each archetype's replay and reason, 09:50 gate, Scenario Book checks,
+    MEIC ticket and defense, alerts fired;
+  - the Settlement audit text (compact + desk format).
+  It is built only when clicked (nothing extra per poll). Send it with the Discord posts for a line-by-line reconcile.
+  `core/daydata.py`.
+### Changed
+- The Settlement audit page's audit computation moved verbatim into `core/daydata.audit_for`, so the page and the zip
+  share one function. Verified byte-identical (both texts and every field) on the Sep 30 desk fixture, live and
+  settled, and on a full demo session.
+- The sidebar watcher keeps today's session after the close, until midnight, instead of switching to tomorrow's
+  provisional map at 16:15. Today's result stays on screen and "today's data" means today.
+- MEIC tab, post-11:30 range-condor test:
+  - hidden until the first 5-minute close after 09:50 (before the open it showed "WAITING · no regular-hours bars yet");
+  - a missing anchor rotation reads BUILDING, not FAILED, until 11:30. Only a close through a node or a range over
+    0.6 EM fails it early.
+- Files: `core/daydata.py` (new), `core/meic.py`, `views/alerts.py`, `views/audit_view.py`, `views/cards.py`, `views/common.py`,
+  `views/live.py`, `views/meic_view.py`, `tests/test_live.py`, `tests/test_smoke.py`, `VERSION`, `CHANGELOG.md`.
+
 ## [1.8.0] — 2026-10-22
 Firing, stop, target, window and eligibility rules are untouched: `core/rules.py`, `core/scoring.py`, `core/audit.py`,
 `core/workstation.py`, `core/plan.py`, `core/credit.py` and the data layer are byte-identical to 1.7.2. Every change

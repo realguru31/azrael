@@ -24,7 +24,7 @@ from typing import Dict, List
 import streamlit as st
 
 from core import alerts as AL
-from utils.timeutil import minutes_of, now_et, session_date, T_GATE_END
+from utils.timeutil import ET, T_GATE_END, is_trading_day, minutes_of, next_trading_day, now_et
 from views import cards as K
 from views import common as U
 
@@ -242,12 +242,37 @@ def evaluate(cfg: Dict, s) -> List[AL.Event]:
     return fire
 
 
+def _live_session():
+    """Today, all day, on a trading day — after the close the sidebar keeps today's result (and today's data) until
+    midnight — otherwise the next trading day."""
+    d = now_et().date()
+    return d if is_trading_day(d) else next_trading_day(d)
+
+
+def _day_button(s, cfg: Dict) -> None:
+    """⬇ Download today's data: the bars, plan, chain and every decision the desk made — built when clicked."""
+    from core import daydata as DD
+    creds = U.tv_creds()
+    seen = st.session_state.get("az_seen") or {}
+    alerts = {"fired_at_et": {k: datetime.fromtimestamp(v, ET).strftime("%H:%M:%S") for k, v in seen.items()},
+              "recent": list(st.session_state.get("az_log", []))}
+    settings = {k: (v.isoformat() if hasattr(v, "isoformat") else v) for k, v in cfg.items()}
+    version = U.APP_VERSION
+
+    def make() -> bytes:
+        return DD.export_live(s, settings, creds, alerts, version, now_et())
+
+    U.download_zip(f"⬇ Download today's data · {s.sess:%b %d}", make, f"azrael_day_{s.sess.isoformat()}_{s.now:%H%M}ET.zip",
+                   key="az_day_zip", help="One zip: the exact bars, map, chain and every decision the desk made today, plus the "
+                                          "Settlement audit text. Send it with the Discord posts for a line-by-line reconcile.")
+
+
 def watch(cfg: Dict) -> None:
     """Sidebar block on every page: live desk status, the alert dispatcher, recent alerts, and the Enable button."""
     from views import live as LV
     poll = cfg["poll"] if cfg.get("auto", True) else None
     live_cfg = dict(cfg)
-    live_cfg["session"] = session_date()             # alerts always watch the live session, whatever date a page is browsing
+    live_cfg["session"] = _live_session()            # alerts always watch the live session, whatever date a page is browsing
 
     @st.fragment(run_every=poll)
     def _watch():
@@ -276,6 +301,10 @@ def watch(cfg: Dict) -> None:
             del log[6:]
         for line in st.session_state.get("az_log", [])[:4]:
             st.markdown(f"<div class='az-log'>{K.esc(line)}</div>", unsafe_allow_html=True)
+        if s is not None and s.ok and s.today:
+            _day_button(s, cfg)
+        else:
+            st.caption("Past sessions: Settlement audit page → ⬇ Download this session's data.")
 
     _watch()
     U.html_frame(_enable_widget_html(), height=76)

@@ -94,9 +94,11 @@ def _render(cfg):
     flow, flow_label = _opening_flow(s)
     st.markdown(K.meic_card(s, t, pay, priced, dfn, flow, flow_label, live), unsafe_allow_html=True)
     rc = None
-    if t["regime"] == 2:
+    if t["regime"] == 2 and (past or (s.today and s.m >= T_GATE_END + 5)):   # nothing to test before the first close after 09:50
         now_min = 24 * 60 if past else s.m
         rc = MC.range_condor_check(s.day5_closed, t, s.lv["em"], t["anchor"], now_min)
+        if not rc.get("checks"):
+            rc = None
     st.markdown(K.meic_rules_card(t, dfn, s.vix_now if s.today else None, rc, live and s.today), unsafe_allow_html=True)
     if not live:
         st.caption(f"The desk posts this ticket at 09:50 ET, after the Discovery Gate. Strikes come from the {('locked 08:30' if s.locked else 'provisional')} "

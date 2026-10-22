@@ -7,6 +7,7 @@ import pandas as pd
 import streamlit as st
 
 from core import audit as AU
+from core import daydata as DD
 from core import plan as P
 from core import rules as R
 from core import workstation as ws
@@ -37,53 +38,15 @@ def render(cfg, plan, label):
         st.error("Could not build the morning map for that date.")
         return
 
-    spx5, _ = U.bars("SPX", "5", 800, U.bucket())
-    spy5, _ = U.bars("SPY", "5", 800, U.bucket())
-    qqq5, _ = U.bars("QQQ", "5", 800, U.bucket())
-    day = F.session_slice(spx5, sess)
-    settle = None
-    spx_d, _ = U.bars("SPX", "D", 8, U.bucket())
-    if spx_d is not None and not spx_d.empty:
-        m = spx_d[[x.date() == sess for x in spx_d.index]]
-        completed = sess < U.now_et().date() or U.minutes_of(U.now_et()) >= 16 * 60
-        if not m.empty and completed:
-            settle = float(m["close"].iloc[-1])
-    lv = R.rule_levels(base)
-    grid = {k: lv[k] for k in ("C13", "C14", "C15", "C16", "C17")}
-    # proxies against their own morning bands
-    proxies = []
-    for key, blk in (("SPY", base.get("spy")), ("FEED", base.get("es"))):
-        if not blk:
-            continue
-        b5, _ = U.bars("SPY", "5", 800, U.bucket()) if key == "SPY" else U.price_bars(cfg["price_symbol"], "5", 800, U.bucket())
-        d5 = F.session_slice(b5, sess)
-        px = None
-        if not d5.empty:
-            at16 = d5[(d5.index.hour == 15) & (d5.index.minute == 55)]
-            px = float(at16["close"].iloc[-1]) if not at16.empty else float(d5["close"].iloc[-1])
-        proxies.append({"name": blk.get("name", key), "settle": px, "band_lo": blk["band_lo"], "band_hi": blk["band_hi"], "em": blk["em"]})
-    a = AU.build_audit(fmt_session_title(sess), day, F.session_slice(spy5, sess), F.session_slice(qqq5, sess), settle,
-                       base["grid"]["c15"], base["inputs"]["c6"], base["inputs"].get("vix_print", "08:15"), grid, lv["em"],
-                       lv["put_node"], lv["call_node"], base["strike_grid"]["put_fence"], base["strike_grid"]["call_fence"],
-                       base["inputs"]["c6"], proxies, base.get("stop_clusters"))
-    # app scoring of the replay trade (Scenario Book), for the reconcile against the desk's "Live Idea" section
-    if a.replay is not None:
-        try:
-            from core import scoring as SCR
-            from core.rules import Replay as _R
-            rr = _R(**{k: a.replay[k] for k in _R.__dataclass_fields__ if k in a.replay})
-            spx1_, _ = U.bars("SPX", "1", 800, U.bucket())
-            vix5_, _ = U.bars("VIX", "5", 400, U.bucket())
-            vday = F.session_slice(vix5_, sess) if vix5_ is not None else None
-            vnow = None
-            if vday is not None and not vday.empty:
-                at = vday[(vday.index.hour * 60 + vday.index.minute) <= (int(rr.trigger_time[:2]) * 60 + int(rr.trigger_time[3:]) + 5)]
-                vnow = float(at["close"].iloc[-1]) if not at.empty else None
-            scd = SCR.score_idea(rr, base, lv, day, F.session_slice(spy5, sess), F.session_slice(qqq5, sess), R.gate_test(day) if not day.empty else None,
-                                 vnow, F.session_slice(spx1_, sess), 16 * 60)
-            a.score_line = f"score {scd.score:.1f} / 9.5 ({scd.send_rule}) — {scd.status_text}"
-        except Exception as e:
-            a.score_line = f"unavailable ({type(e).__name__})"
+    spx5, spx_src = U.bars("SPX", "5", 800, U.bucket())
+    spy5, spy_src = U.bars("SPY", "5", 800, U.bucket())
+    qqq5, qqq_src = U.bars("QQQ", "5", 800, U.bucket())
+    spx_d, spxd_src = U.bars("SPX", "D", 8, U.bucket())
+    feed5, feed_src = U.price_bars(cfg["price_symbol"], "5", 800, U.bucket()) if base.get("es") else (None, "")
+    spx1_, spx1_src = U.bars("SPX", "1", 800, U.bucket())
+    vix5_, vix5_src = U.bars("VIX", "5", 400, U.bucket())
+    # the audit itself (also what the day-data zip contains): core/daydata.audit_for — the code that lived here up to 1.8.0
+    a, lv, grid, day = DD.audit_for(sess, base, spx5, spy5, qqq5, spx_d, feed5, spx1_, vix5_, U.now_et())
     st.caption(f"Map source: {src_note}. Rules measured on {'the re-anchored gap grid' if lv['mode'] == 'gap' else 'the standard grid'}; on the index, not fills.")
     # ── scoreboard (execution read) + the full desk-format text in its own box (daily reconcile)
     sb_l, sb_r = st.columns([0.42, 0.58])
@@ -118,6 +81,16 @@ def render(cfg, plan, label):
             cols[1].caption("Session not settled — preview only (replay is final after 11:30).")
         if saved:
             cols[1].caption(f"Saved audit on file for {sess}.")
+        frames = {"SPX_5m": (spx5, spx_src), "SPY_5m": (spy5, spy_src), "QQQ_5m": (qqq5, qqq_src), "SPX_daily": (spx_d, spxd_src),
+                  "PRICE_5m": (feed5, feed_src), "SPX_1m": (spx1_, spx1_src), "VIX_5m": (vix5_, vix5_src)}
+        settings = {k: (v.isoformat() if hasattr(v, "isoformat") else v) for k, v in cfg.items()}
+        version = U.APP_VERSION
+
+        def make() -> bytes:
+            return DD.export_audit(sess, base, a, frames, settings, version, U.now_et(), src_note)
+
+        U.download_zip(f"⬇ Download this session's data · {sess:%b %d}", make, f"azrael_audit_{sess.isoformat()}.zip", key="audit_zip",
+                       help="One zip: the bars, the morning map and this audit (compact + desk-format text) for any date.")
     with right:
         fig = C.session_chart(day, sess, grid, {"call_node": lv["call_node"], "put_node": lv["put_node"]},
                               {"call_fence": base["strike_grid"]["call_fence"], "put_fence": base["strike_grid"]["put_fence"]},

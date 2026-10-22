@@ -58,6 +58,7 @@ class Snap:
     ticket: Optional[Dict] = None
     three: Optional[Dict] = None
     fetched_at: Optional[datetime] = None
+    raw: Dict = field(default_factory=dict)        # name -> (DataFrame as read from the feed, source) — the day-data export
 
 
 def size_text(plan: Dict) -> str:
@@ -105,11 +106,13 @@ def _build(cfg: Dict, now: datetime) -> Snap:
     snap.px1, snap.px_src = U.price_bars(cfg["price_symbol"], "5" if five else "1", n_bars, U.bucket())
     snap.five, snap.shift = five, (0 if five else 5)        # on the 1-minute view the 5-minute bar's close is 5 minutes after its stamp
     if cfg.get("rules_feed", "").startswith("Price"):
-        spx5, _ = U.price_bars(cfg["price_symbol"], "5", 400, U.bucket())
+        spx5, spx_src = U.price_bars(cfg["price_symbol"], "5", 400, U.bucket())
     else:
-        spx5, _ = U.bars("SPX", "5", 400, U.bucket())
-    spy5, _ = U.bars("SPY", "5", 400, U.bucket())
-    qqq5, _ = U.bars("QQQ", "5", 400, U.bucket())
+        spx5, spx_src = U.bars("SPX", "5", 400, U.bucket())
+    spy5, spy_src = U.bars("SPY", "5", 400, U.bucket())
+    qqq5, qqq_src = U.bars("QQQ", "5", 400, U.bucket())
+    snap.raw = {"SPX_5m": (spx5, spx_src), "SPY_5m": (spy5, spy_src), "QQQ_5m": (qqq5, qqq_src),
+                ("PRICE_5m" if five else "PRICE_1m"): (snap.px1, snap.px_src)}
     snap.fetched_at = L.fetched_at(spx5, now)
     day5 = F.session_slice(spx5, sess)
     day_spy, day_qqq = F.session_slice(spy5, sess), F.session_slice(qqq5, sess)

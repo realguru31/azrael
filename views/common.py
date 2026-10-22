@@ -269,6 +269,24 @@ def html_frame(html: str, height: int, scrolling: bool = False):
     return _components.html(html, height=height, scrolling=scrolling)
 
 
+def download_zip(label: str, make, file_name: str, key: str, help: str = "") -> None:
+    """One-click download whose zip is built only when clicked (`make` runs in a worker thread: it must not call st.*).
+    Streamlit versions without deferred downloads get two steps: Prepare, then Download."""
+    import re as _re
+    ver = tuple(int(x) for x in _re.findall(r"\d+", getattr(st, "__version__", "0.0"))[:2])
+    if ver >= (1, 50):
+        try:
+            st.download_button(label, data=make, file_name=file_name, mime="application/zip", key=key, help=help, on_click="ignore")
+            return
+        except Exception:
+            pass
+    if st.button(label.replace("Download", "Prepare"), key=f"{key}_prep", help=help):
+        st.session_state[f"{key}_zip"] = (file_name, make())
+    got = st.session_state.get(f"{key}_zip")
+    if got:
+        st.download_button(f"⬇ {got[0]}", data=got[1], file_name=got[0], mime="application/zip", key=f"{key}_dl")
+
+
 def bucket(seconds: Optional[int] = None) -> int:
     """Cache key that changes once per poll interval (the slider), so each poll fetches exactly once."""
     s = seconds or int(st.session_state.get("set_poll", REFRESH_SECONDS))

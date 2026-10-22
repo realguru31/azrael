@@ -183,6 +183,20 @@ def test_live_snapshot_state_cards_alerts_and_meic():
     w = ALV._enable_widget_html()
     assert "__azrael" in w and "requestPermission" in w and w.count("<script>") == 1
     assert ALV.evaluate(cfg, s) == [] or s.today                                        # alerts only for the live session
+    # 1.8.1: the day-data zip from this snapshot has every part and parses back
+    import io, json, zipfile
+    from core import daydata as DD
+    blob = DD.export_live(s, {"session": SESS.isoformat(), "poll": 60}, None, {"recent": []}, "test", datetime.now(ET))
+    z = zipfile.ZipFile(io.BytesIO(blob))
+    names = set(z.namelist())
+    for need in ("README.txt", "meta.json", "plan.json", "state.json", "audit_compact.txt", "audit_long.txt", "bars/SPX_5m.csv", "bars/SPY_5m.csv",
+                 "bars/QQQ_5m.csv", "bars/VIX_1m.csv", "bars/SPX_daily.csv"):
+        assert need in names, (need, names)
+    meta = json.loads(z.read("meta.json"))
+    assert meta["session"] == SESS.isoformat() and meta["frames"]["SPX_5m"]["rows"] > 0 and not meta["errors"], meta.get("errors")
+    assert "SETTLEMENT AUDIT" in z.read("audit_compact.txt").decode() and json.loads(z.read("state.json"))["card"]["state"]
+    first = z.read("bars/SPX_5m.csv").decode().splitlines()
+    assert first[0] == "time_et,open,high,low,close,volume" and "-04:00" in first[1] or "-05:00" in first[1]
 
 
 def test_journal_roundtrip_and_stats():

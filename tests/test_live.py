@@ -183,6 +183,11 @@ def test_range_condor_check_follows_the_desk_text():
     assert ok["verdict"] == "CONFIRMED", ok
     bad = MC.range_condor_check(_bars(d, rot + [("10:10", 7706, 7760, 7705, 7758, 0)]), t, em, 7712.57, 10 * 60 + 20)
     assert bad["verdict"] == "FAILED" and not bad["checks"][0]["ok"]
+    # one-way so far (no anchor rotation yet) is not a failure before 11:30 — rotation can still print
+    one_way = [("09:30", 7712, 7722, 7710, 7718, 0), ("09:50", 7718, 7726, 7716, 7722, 0), ("09:55", 7722, 7728, 7719, 7724, 0)]
+    mid = MC.range_condor_check(_bars(d, one_way), t, em, 7712.57, 10 * 60)
+    assert mid["verdict"] == "BUILDING" and mid["checks"][1].get("pending")
+    assert MC.range_condor_check(_bars(d, one_way), t, em, 7712.57, 11 * 60 + 31)["verdict"] == "NOT CONFIRMED"
 
 
 def test_alerts_fire_once_and_skip_stale_facts():

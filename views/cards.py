@@ -521,11 +521,12 @@ def meic_rules_card(t: Dict, dfn: Dict, vix_now: Optional[float], rc: Optional[D
             flip = f"<div class='az-li'><b style='color:{RED}'>Negative Gamma since 08:15:</b> VIX now {vix_now:.2f}. Condors stay banned all session.</div>"
     rc_html = ""
     if rc is not None and t["regime"] == 2 and t["allowed"]:
-        vcol = {"CONFIRMED": GREEN, "ON TRACK": AMBER, "FAILED": RED, "NOT CONFIRMED": RED, "WAITING": GREY}.get(rc["verdict"], GREY)
-        rows = "".join(f"<div class='az-tt' style='grid-template-columns:1.2rem 1fr'><span class='{'az-ok' if c['ok'] and not c.get('warn') else 'az-mid' if c['ok'] else 'az-no'}'>"
-                       f"{'✓' if c['ok'] else '✗'}</span><span><b>{esc(c['name'])}</b> · <span class='az-s'>{esc(c['note'])}</span></span></div>" for c in rc["checks"])
-        rc_html = (f"<div class='az-panel' style='margin-top:10px'><div class='az-ph'><span>Post-11:30 range condor test (Azraël, Oct 8)</span>"
-                   f"<span class='r' style='color:{vcol}'>{esc(rc['verdict'])}</span></div>{rows}<div class='az-s' style='margin-top:6px'>{esc(rc['detail'])}</div></div>")
+        vcol = {"CONFIRMED": GREEN, "ON TRACK": AMBER, "BUILDING": AMBER, "FAILED": RED, "NOT CONFIRMED": RED, "WAITING": GREY}.get(rc["verdict"], GREY)
+        rows = "".join(f"<div class='az-tt' style='grid-template-columns:1.2rem 1fr'><span class='{'az-ok' if c['ok'] and not c.get('warn') else 'az-mid' if (c['ok'] or c.get('pending')) else 'az-no'}'>"
+                       f"{'✓' if c['ok'] else '…' if c.get('pending') else '✗'}</span><span><b>{esc(c['name'])}</b> · <span class='az-s'>{esc(c['note'])}</span></span></div>" for c in rc["checks"])
+        rc_html = (f"<div class='az-panel' style='margin-top:10px'><div class='az-ph'><span>Post-11:30 range condor test</span>"
+                   f"<span class='r' style='color:{vcol}'>{esc(rc['verdict'])}</span></div>{rows}<div class='az-s' style='margin-top:6px'>{esc(rc['detail'])} · "
+                   f"Azraël's criteria for a range condor after 11:30 (#live-desk-talk).</div></div>")
     return (f"<div class='az-card'><div class='az-ph' style='margin-bottom:6px'><span>Execution &amp; defense rules</span>"
             f"<span class='r' style='color:{reg_col}'>{esc(t['regime_pill'])}</span></div><div class='az-li'>{esc(t['hold'])}</div>"
             f"{mand}{law}{live_d}{flip}{rc_html}"

@@ -137,8 +137,9 @@ def range_condor_check(bars5_closed: Optional[pd.DataFrame], t: Dict, em: float,
     side = (after["close"] > anchor).astype(int) - (after["close"] < anchor).astype(int)
     side = side[side != 0]
     crosses = int((side.diff().abs() > 0).sum()) if len(side) > 1 else 0
-    checks.append({"name": "Two-way rotation across the anchor", "ok": crosses >= 2,
-                   "note": f"{crosses} cross{'es' if crosses != 1 else ''} of the {anchor:,.2f} anchor on 5-minute closes (needs back and forth: ≥ 2)"})
+    checks.append({"name": "Two-way rotation across the anchor", "ok": crosses >= 2, "pending": crosses < 2 and now_min < T_SHUTDOWN,
+                   "note": f"{crosses} cross{'es' if crosses != 1 else ''} of the {anchor:,.2f} anchor on 5-minute closes (needs back and forth: ≥ 2)"
+                           + (" — still possible before 11:30" if crosses < 2 and now_min < T_SHUTDOWN else "")})
     rng = float(morning["high"].max() - morning["low"].min()) if not morning.empty else 0.0
     frac = rng / em if em else 0.0
     checks.append({"name": "Morning range under ~0.5–0.6 EM", "ok": frac <= 0.6, "warn": 0.5 < frac <= 0.6,
@@ -151,10 +152,12 @@ def range_condor_check(bars5_closed: Optional[pd.DataFrame], t: Dict, em: float,
                             "no probe of either node" if not n_probe and outside.empty else "a close went through a node")})
     out["checks"] = checks
     all_ok = all(c["ok"] for c in checks)
+    hard_fail = any(not c["ok"] and not c.get("pending") for c in checks)      # a close through a node / range > 0.6 EM cannot be undone
     if now_min < T_SHUTDOWN:
-        out["verdict"] = "ON TRACK" if all_ok else "FAILED"
+        out["verdict"] = "ON TRACK" if all_ok else "FAILED" if hard_fail else "BUILDING"
         out["detail"] = ("so far every condition holds — verdict at 11:30" if all_ok else
-                         "already failed — no range condor today (single-sided only, beyond the fences)")
+                         "already failed — no range condor today (single-sided only, beyond the fences)" if hard_fail else
+                         "no failure yet; the anchor rotation has not printed — verdict at 11:30")
     else:
         out["verdict"] = "CONFIRMED" if all_ok else "NOT CONFIRMED"
         out["detail"] = (f"range confirmed at 11:30 — a condor is allowed, short wings strictly beyond the fences "

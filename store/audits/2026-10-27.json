@@ -1,0 +1,88 @@
+{
+ "session": "TUESDAY (OCT 27, 2026)",
+ "settlement": 7722.6,
+ "anchor": 7676.77,
+ "vix": 17.8,
+ "vix_print_time": "08:15",
+ "em": 86.07920771473702,
+ "c13": 7762.8492077147375,
+ "c14": 7719.8096038573685,
+ "c15": 7676.77,
+ "c16": 7633.730396142632,
+ "c17": 7590.690792285263,
+ "put_node": 7635.0,
+ "call_node": 7720.0,
+ "put_fence": 7570.0,
+ "call_fence": 7785.0,
+ "session_low": 7677.16,
+ "session_low_time": "10:20",
+ "session_high": 7736.24,
+ "session_high_time": "15:45",
+ "range_pts": 59.08,
+ "range_em": 0.69,
+ "inside_1sigma": true,
+ "inside_half": false,
+ "walls_tested": false,
+ "wall_tested_side": "",
+ "half_shelves_held": false,
+ "king_node_touched": "call node 7720",
+ "stops_run": [
+  "pre-market high 7712.70 taken out (session high 7736.24 at 15:45)",
+  "prior session high 7702.13 taken out (session high 7736.24 at 15:45)",
+  "round hundred 7700 traded through"
+ ],
+ "nearest_miss": "",
+ "score_line": "",
+ "provisional": false,
+ "last_print": null,
+ "last_print_time": "",
+ "settle_zone": "between C14 and C13",
+ "regime": 2,
+ "replay": {
+  "archetype": 3,
+  "qualified": true,
+  "side": "long",
+  "trigger_time": "10:30",
+  "entry": 7699.85,
+  "stop": 7690.7,
+  "target": 7719.8096038573685,
+  "risk_pts": 9.15,
+  "resolution": "target",
+  "exit_time": "11:15",
+  "exit_price": 7719.8096038573685,
+  "pnl_pts": 19.96,
+  "r_multiple": 2.18,
+  "best_excursion": 22.43,
+  "trigger_text": "SPX closed the 10:30 bar at 7699.85, 9.15 pts above its 10:10 to 10:25 box (7677.16 to 7690.70, 13.54 pts wide); SPY 767.46 closed above its box high (766.62); QQQ 717.33 closed above its box high (716.42) on the same bar. Next EM level 7719.81, 19.96 pts of room.",
+  "invalidation_text": "A 5-minute close back inside the box, below 7690.70. Planned risk 9.15 pts = 1R.",
+  "resolution_text": "Target: the 11:15 bar reached 7719.81, +19.96 pts (+2.18R on the index). Best excursion 22.43 pts.",
+  "not_qualified_reason": "",
+  "extra": {
+   "box_lo": 7677.16,
+   "box_hi": 7690.7,
+   "width": 13.539999999999964
+  }
+ },
+ "also_checked": [
+  "Not eligible at VIX 17.80: Archetype 1 (needs VIX under 15).",
+  "Archetype 2 at the put node 7635 did not qualify: SPX never reached it from 09:50 to 11:30; the window low was 7677.16, 42.16 pts above it. Archetype 2 at the call node 7720 did not qualify: the best touch was the 11:25 bar (high 7722.66, close 7721.34); it did not close back below 7720 and it printed after the 11:00 bar, the last bar that can trigger an entry (entries close by 11:05).",
+  "Not eligible at VIX 17.80: Archetype 4 (needs VIX above 18.5)."
+ ],
+ "lesson": "In a Balanced Gamma (Two-Way Auction) regime (structural interpretation), the session used 0.69 EM of range (59.08 pts) and settled inside the 1-sigma envelope. The 10:30 Archetype 3 trigger reached its target for +2.18R.",
+ "proxies": [
+  {
+   "name": "SPY",
+   "settle": 770.18,
+   "band_lo": 756.7879474950236,
+   "band_hi": 773.9520525049765,
+   "em": 8.582052504976478
+  },
+  {
+   "name": "CAPITALCOM:SPX500 (08:20 price)",
+   "settle": 7726.9,
+   "band_lo": 7618.802008229556,
+   "band_hi": 7791.5979917704435,
+   "em": 86.39799177044405
+  }
+ ]
+}

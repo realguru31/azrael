@@ -1,0 +1,90 @@
+{
+ "session": "MONDAY (NOV 02, 2026)",
+ "settlement": 7541.4,
+ "anchor": 7580.07,
+ "vix": 19.36,
+ "vix_print_time": "08:15",
+ "em": 92.44390845698385,
+ "c13": 7672.513908456984,
+ "c14": 7626.291954228492,
+ "c15": 7580.07,
+ "c16": 7533.848045771508,
+ "c17": 7487.626091543016,
+ "put_node": 7535.0,
+ "call_node": 7625.0,
+ "put_fence": 7465.0,
+ "call_fence": 7695.0,
+ "session_low": 7539.38,
+ "session_low_time": "15:55",
+ "session_high": 7662.23,
+ "session_high_time": "10:25",
+ "range_pts": 122.85,
+ "range_em": 1.33,
+ "inside_1sigma": true,
+ "inside_half": true,
+ "walls_tested": false,
+ "wall_tested_side": "",
+ "half_shelves_held": false,
+ "king_node_touched": "call node 7625",
+ "stops_run": [
+  "pre-market high 7630.90 taken out (session high 7662.23 at 10:25)",
+  "pre-market low 7604.90 taken out (session low 7539.38 at 15:55)",
+  "prior session high 7637.48 taken out (session high 7662.23 at 10:25)",
+  "round hundred 7600 traded through"
+ ],
+ "nearest_miss": "",
+ "score_line": "",
+ "provisional": false,
+ "last_print": null,
+ "last_print_time": "",
+ "settle_zone": "between C16 and C15",
+ "regime": 3,
+ "replay": {
+  "archetype": 3,
+  "qualified": true,
+  "side": "long",
+  "trigger_time": "10:10",
+  "entry": 7638.46,
+  "stop": 7631.04,
+  "target": 7672.513908456984,
+  "risk_pts": 7.42,
+  "resolution": "stopped",
+  "exit_time": "11:10",
+  "exit_price": 7628.37,
+  "pnl_pts": -10.09,
+  "r_multiple": -1.36,
+  "best_excursion": 23.77,
+  "trigger_text": "SPX closed the 10:10 bar at 7638.46, 7.42 pts above its 09:50 to 10:05 box (7622.02 to 7631.04, 9.02 pts wide); SPY 761.55 closed above its box high (761.21); QQQ 696.51 closed above its box high (695.72) on the same bar. Next EM level 7672.51, 34.05 pts of room.",
+  "invalidation_text": "A 5-minute close back inside the box, below 7631.04. Planned risk 7.42 pts = 1R.",
+  "resolution_text": "Stopped: the 11:10 bar closed at 7628.37, -10.09 pts (-1.36R on the index). The stop is a 5-minute close, so the exit overshot the planned 1R by 0.36R. Best excursion before the exit: 23.77 pts in favor.",
+  "not_qualified_reason": "",
+  "extra": {
+   "box_lo": 7622.02,
+   "box_hi": 7631.04,
+   "width": 9.019999999999527
+  }
+ },
+ "also_checked": [
+  "After the one setup: Archetype 3 short at the 10:50 bar (7,640.35). Not taken: one setup per day.",
+  "Not eligible at VIX 19.36: Archetype 1 (needs VIX under 15).",
+  "Archetype 2 at the put node 7535 did not qualify: SPX never reached it from 09:50 to 11:30; the window low was 7621.58, 86.58 pts above it. Archetype 2 at the call node 7625 did not qualify: the best touch was the 11:20 bar (high 7629.93, close 7623.23); the rejection wick did not meet the rule and the rally into the node after 09:50 was 3.42 pts from the 11:25 bar low 7621.58, under the 15-pt minimum and it printed after the 11:00 bar, the last bar that can trigger an entry (entries close by 11:05).",
+  "Archetype 4 did not qualify: no two consecutive closes beyond a 0.5 shelf between 09:50 and 11:05."
+ ],
+ "lesson": "In a Negative Gamma (Volatility Expansion) regime (structural interpretation), the session used 1.33 EM of range (122.85 pts) and settled inside the 1-sigma envelope. The 10:10 Archetype 3 trigger ran 23.77 pts before the stop, and the close-based stop gave up 0.36R beyond plan.",
+ "proxies": [
+  {
+   "name": "SPY",
+   "settle": 753.0,
+   "band_lo": 746.5035006142276,
+   "band_hi": 764.9364993857724,
+   "em": 9.216499385772405
+  },
+  {
+   "name": "CAPITALCOM:SPX500 (08:20 price)",
+   "settle": 7548.8,
+   "band_lo": 7516.302051717196,
+   "band_hi": 7701.8979482828045,
+   "em": 92.79794828280423
+  }
+ ]
+}

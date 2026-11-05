@@ -1,0 +1,64 @@
+{
+ "session": "WEDNESDAY (NOV 04, 2026)",
+ "settlement": 7688.62,
+ "anchor": 7568.92,
+ "vix": 18.52,
+ "vix_print_time": "08:15",
+ "em": 88.30283091597914,
+ "c13": 7657.222830915979,
+ "c14": 7613.07141545799,
+ "c15": 7568.92,
+ "c16": 7524.76858454201,
+ "c17": 7480.617169084021,
+ "put_node": 7525.0,
+ "call_node": 7615.0,
+ "put_fence": 7460.0,
+ "call_fence": 7680.0,
+ "session_low": 7635.81,
+ "session_low_time": "09:30",
+ "session_high": 7715.57,
+ "session_high_time": "13:05",
+ "range_pts": 79.76,
+ "range_em": 0.9,
+ "inside_1sigma": false,
+ "inside_half": false,
+ "walls_tested": true,
+ "wall_tested_side": "+1.0",
+ "half_shelves_held": false,
+ "king_node_touched": "neither node was traded through",
+ "stops_run": [
+  "pre-market high 7663.40 taken out (session high 7715.57 at 13:05)",
+  "prior session high 7594.61 taken out (session high 7715.57 at 13:05)"
+ ],
+ "nearest_miss": "the window low of 7657.38 sat 132.38 pts above the 7525 put node",
+ "score_line": "",
+ "provisional": false,
+ "last_print": null,
+ "last_print_time": "",
+ "settle_zone": "ABOVE C13: +1.0 wall broken",
+ "regime": 3,
+ "replay": null,
+ "also_checked": [
+  "Not eligible at VIX 18.52: Archetype 1 (needs VIX under 15).",
+  "Archetype 2 at the put node 7525 did not qualify: SPX never reached it from 09:50 to 11:30; the window low was 7657.38, 132.38 pts above it. Archetype 2 at the call node 7615 did not qualify: the best touch was the 11:25 bar (high 7669.19, close 7664.90); it did not close back below 7615 and the rally into the node after 09:50 was -42.38 pts from the 11:25 bar low 7657.38, under the 15-pt minimum and it printed after the 11:00 bar, the last bar that can trigger an entry (entries close by 11:05).",
+  "Archetype 3 did not qualify: 10:10 broke long but the box was 23.10 pts wide (limit 17.66); 10:20 SPX broke short but QQQ did not close outside its own box; 10:45 broke short but the box was 21.33 pts wide (limit 17.66).",
+  "Archetype 4 did not qualify: no two consecutive closes beyond a 0.5 shelf between 09:50 and 11:05."
+ ],
+ "lesson": "The window low of 7657.38 sat 132.38 pts above the 7525 put node, and in a negative gamma (volatility expansion) inside the expected move, only an actual tag of the written level makes the setup live. Not trading was the trade.",
+ "proxies": [
+  {
+   "name": "SPY",
+   "settle": 766.66,
+   "band_lo": 745.5493731600454,
+   "band_hi": 763.1506268399546,
+   "em": 8.80062683995456
+  },
+  {
+   "name": "CAPITALCOM:SPX500 (08:20 price)",
+   "settle": 7689.9,
+   "band_lo": 7548.100580231854,
+   "band_hi": 7726.2994197681455,
+   "em": 89.09941976814603
+  }
+ ]
+}

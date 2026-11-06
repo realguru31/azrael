@@ -1,0 +1,64 @@
+{
+ "session": "THURSDAY (NOV 05, 2026)",
+ "settlement": 7353.73,
+ "anchor": 7688.62,
+ "vix": 16.91,
+ "vix_print_time": "08:15",
+ "em": 81.90147706896224,
+ "c13": 7770.521477068962,
+ "c14": 7729.570738534481,
+ "c15": 7688.62,
+ "c16": 7647.6692614655185,
+ "c17": 7606.718522931038,
+ "put_node": 7650.0,
+ "call_node": 7730.0,
+ "put_fence": 7585.0,
+ "call_fence": 7790.0,
+ "session_low": 7350.35,
+ "session_low_time": "15:55",
+ "session_high": 7681.29,
+ "session_high_time": "09:30",
+ "range_pts": 330.94,
+ "range_em": 4.04,
+ "inside_1sigma": false,
+ "inside_half": false,
+ "walls_tested": true,
+ "wall_tested_side": "\u22121.0",
+ "half_shelves_held": false,
+ "king_node_touched": "put node 7650",
+ "stops_run": [
+  "pre-market low 7662.10 taken out (session low 7350.35 at 15:55)",
+  "prior session low 7635.81 taken out (session low 7350.35 at 15:55)"
+ ],
+ "nearest_miss": "the window high of 7592.26 held 137.31 pts below the +0.5 shelf 7729.57",
+ "score_line": "",
+ "provisional": false,
+ "last_print": null,
+ "last_print_time": "",
+ "settle_zone": "BELOW C17: \u22121.0 wall broken",
+ "regime": 2,
+ "replay": null,
+ "also_checked": [
+  "Not eligible at VIX 16.91: Archetype 1 (needs VIX under 15).",
+  "Archetype 2 at the put node 7650 did not qualify: the best touch was the 09:50 bar (low 7568.35, close 7568.45); it did not close back above 7650 and the fall into the node after 09:50 was -57.74 pts from the 09:50 bar high 7592.26, under the 15-pt minimum. Archetype 2 at the call node 7730 did not qualify: SPX never reached it from 09:50 to 11:30; the window high was 7592.26, 137.74 pts below it.",
+  "Archetype 3 did not qualify: 09:50 broke short but the box was 105.17 pts wide (limit 16.38); 09:55 broke short but the box was 81.02 pts wide (limit 16.38); 10:00 broke short but the box was 78.16 pts wide (limit 16.38).",
+  "Not eligible at VIX 16.91: Archetype 4 (needs VIX above 18.5)."
+ ],
+ "lesson": "The window high of 7592.26 held 137.31 pts below the +0.5 shelf 7729.57, and in a balanced gamma (two-way auction) inside the expected move, only an actual tag of the written level makes the setup live. Not trading was the trade.",
+ "proxies": [
+  {
+   "name": "SPY",
+   "settle": 734.19,
+   "band_lo": 758.6417108100997,
+   "band_hi": 774.9782891899002,
+   "em": 8.168289189900259
+  },
+  {
+   "name": "CAPITALCOM:SPX500 (08:20 price)",
+   "settle": 7362.8,
+   "band_lo": 7616.889017300083,
+   "band_hi": 7780.9109826999165,
+   "em": 82.01098269991668
+  }
+ ]
+}

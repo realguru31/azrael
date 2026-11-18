@@ -241,6 +241,21 @@ def live_status(r, score: float, spx1: Optional[pd.DataFrame], now_min: int) -> 
     return "WAITING", f"score {score:.1f} — waiting, {left} bar{'s' if left != 1 else ''} left for a 1-min close 0.25R ({0.25 * risk:.2f} pts) in its direction", None, None
 
 
+def live_ticket(first, replay_after, score_of, max_iter: int = 6):
+    """The desk's live ticket is the first qualifying idea that is SENT (score ≥ 4.0 and confirmed). An idea that is not
+    sent, dropped or expired leaves the day's one ticket free, so the scan continues with the next qualifying bar
+    (Nov 10: the replay's 09:55 S3 long was never sent; the live ticket was the 10:25 S3 short). Returns (r, sc), tried."""
+    r = first; tried = []
+    for _ in range(max_iter):
+        if r is None:
+            return (None, None), tried
+        sc = score_of(r); tried.append((r, sc))
+        if sc.status in ("SENT", "WAITING", "CUTOFF"):
+            return (r, sc), tried
+        r = replay_after(r.trigger_time)
+    return (None, None), tried
+
+
 def score_idea(r, plan: Dict, lv: Dict[str, float], bars5: pd.DataFrame, spy5, qqq5, gate, vix5: Optional[pd.DataFrame],
                spx1: Optional[pd.DataFrame], now_min: int, spy_hist5: Optional[pd.DataFrame] = None) -> Scored:
     checks = ten_checks(r, plan, lv, bars5, spy5, qqq5, gate, vix5, spy_hist5)

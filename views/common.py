@@ -88,7 +88,7 @@ def theme_name() -> str:
 def setup() -> None:
     from utils import charts as _C
     from core import rules as _R
-    _R.set_rules_mode("close" if str(st.session_state.get("set_rules_mode", "")).startswith("Legacy") else "touch")
+    _R.set_rules_mode(_R.rules_mode_for(st.session_state.get("set_session_input") or st.session_state.get("set_session") or date.today(), st.session_state.get("set_rules_mode", "auto")))
     name = theme_name()
     st.markdown(CSS_BASE % THEME_VARS[name], unsafe_allow_html=True)
     _C.set_theme(name)
@@ -192,8 +192,8 @@ def settings() -> Dict:
         st.number_input("C28 Option delta", min_value=0.05, max_value=1.0, step=0.05, key="set_c28")
         st.text_input("Price feed (chart & live price)", key="set_price_symbol",
                       help="24-hour feed drawn on the chart and used for the live price. SP:SPX is used only for the official prior close and settlement.")
-        st.radio("Rule set", ["November desk rules (stops on a touch, half off at +1R)", "Legacy (stops on a 5-min close, pre-Nov-16 audits)"], key="set_rules_mode",
-                 help="The desk changed its rules on 2026-11-16. Legacy reproduces audits from before that date.")
+        st.radio("Rule set", ["Auto by session date (Nov 16 switch)", "November desk rules (stops on a touch, half off at +1R)", "Legacy (stops on a 5-min close)"], key="set_rules_mode",
+                 help="The desk changed its rules on 2026-11-16: stops on a touch, half off at +1R, only the day's two setups. Auto replays earlier sessions the old way.")
         st.radio("Rules engine runs on", ["SPX cash 5-min (book)", "Price feed 5-min"], key="set_rules_feed",
                  help="The desk audit measures on the SPX index; switch if you want the scanner on the same feed as the chart.")
         st.checkbox("Allow CBOE delayed fallback when Barchart cannot answer", key="set_cboe_fallback",

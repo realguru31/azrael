@@ -78,6 +78,26 @@ All notable changes to the Azraël Desk app. Format: Keep a Changelog; versions 
   `core/execution.py`, `core/audit.py`, `utils/charts.py`, `core/scenario.py`, `utils/text.py`, `core/plan.py`,
   `.github/workflows/lock_0830.yml`, `desk_settings.example.toml`.
 
+## [2.0.2] — 2026-11-18
+### Changed — from a line-by-line read of the full Discord export
+- Live ticket = the first qualifying idea that is actually sent; an idea that is not sent / dropped / expired leaves the
+  day's ticket free and the scan continues (Nov 10: replay 09:55 long never sent; live ticket 10:25 short). The banner's
+  score line and ticket follow the live ticket; a note names the earlier idea and why it was not sent.
+- Targets: the first mapped level at least 1R past the entry, where mapped levels = walls, shelves, middle, the S2 levels
+  (rounded shelves) and the strike walls (rounded walls), as the tickets show ("put king node", "upper strike wall").
+- Gap mornings re-anchor to the open with the same formula in both rule sets (the desk's audits do so since Nov 4).
+- S4: the 1.0 wall must still be ahead at the second close (Nov 9: "already past the 1.0 EM wall (no room)").
+- Files: `core/rules.py`, `core/scoring.py`, `views/desk.py`.
+
+## [2.0.1] — 2026-11-18
+### Fixed
+- Under the November rules only the day's two setups can fire (S2 was still being replayed on fast days: Nov 10 fired an
+  A2 long instead of the desk's S3 short).
+- Rule set is chosen automatically by session date: sessions before 2026-11-16 replay under the legacy close-based rules
+  (no half-off), matching how their audits were produced (Nov 9 +0.39R vs the app's +0.25R). Sidebar keeps a manual override.
+- The audit page sets the rule set from the session being audited.
+- Files: `core/rules.py`, `views/common.py`, `views/audit_view.py`.
+
 ## [2.0.0] — 2026-11-18
 ### Changed — the desk's November rules (announced 2026-11-16/17 in Discord; sources in the handover's Discord export)
 - **Stops fire on a touch** (bar low/high), capped at −1R; **half off at +1R**, then the stop on the rest moves to the entry;

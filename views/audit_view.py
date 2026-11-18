@@ -62,6 +62,7 @@ def render(cfg, plan, label):
             at16 = d5[(d5.index.hour == 15) & (d5.index.minute == 55)]
             px = float(at16["close"].iloc[-1]) if not at16.empty else float(d5["close"].iloc[-1])
         proxies.append({"name": blk.get("name", key), "settle": px, "band_lo": blk["band_lo"], "band_hi": blk["band_hi"], "em": blk["em"]})
+    R.set_rules_mode(R.rules_mode_for(sess, st.session_state.get('set_rules_mode', 'auto')))
     a = AU.build_audit(fmt_session_title(sess), day, F.session_slice(spy5, sess), F.session_slice(qqq5, sess), settle,
                        base["grid"]["c15"], base["inputs"]["c6"], base["inputs"].get("vix_print", "08:15"), grid, lv["em"],
                        lv["put_node"], lv["call_node"], base["strike_grid"]["put_fence"], base["strike_grid"]["call_fence"],

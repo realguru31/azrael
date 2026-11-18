@@ -204,10 +204,19 @@ def render(cfg, plan0, label0):
             spx1_idx, _ = U.bars("SPX", "1", 800, U.bucket())
             vix5, _ = U.bars("VIX", "5", 400, U.bucket())
             spy_hist, _ = U.bars("SPY", "5", 900, U.bucket())
-            sc = SCR.score_idea(live_s["chosen"], plan, lv, day5, day_spy, day_qqq, gate, F.session_slice(vix5, sess) if vix5 is not None else None,
-                                F.session_slice(spx1_idx, sess), m, spy_hist)
+            vday = F.session_slice(vix5, sess) if vix5 is not None else None
+            spx1d = F.session_slice(spx1_idx, sess)
+            grid_ = {k: lv[k] for k in ("C13", "C14", "C15", "C16", "C17")}
+            score_of = lambda r: SCR.score_idea(r, plan, lv, day5, day_spy, day_qqq, gate, vday, spx1d, m, spy_hist)
+            rep_after = lambda t: R.replay_after(day5, day_spy, day_qqq, grid_, lv["em"], lv["put_node"], lv["call_node"], plan["inputs"]["c6"], t)
+            (lr, sc), tried = SCR.live_ticket(live_s["chosen"], rep_after, score_of)
+            if sc is None:                                  # nothing sent today: show the first idea's score and why
+                sc = tried[0][1] if tried else score_of(live_s["chosen"])
+                lr = live_s["chosen"]
             b.score = sc.as_dict()
-            b.ticket = X.ticket_lines(live_s["chosen"], sess.isoformat(), cfg["c8"], b_grade=(sc.grade == "B"))
+            b.ticket = X.ticket_lines(lr, sess.isoformat(), cfg["c8"], b_grade=(sc.grade == "B"))
+            if lr is not live_s["chosen"]:
+                b.notes = [f"LIVE TICKET is the {lr.trigger_time} bar S{lr.archetype} {lr.side} (the first qualifying idea at {live_s['chosen'].trigger_time} was not sent: {tried[0][1].status_text})"] + b.notes
         _banner(b, sc)
         _alerts(b, cfg)
 

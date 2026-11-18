@@ -32,7 +32,7 @@ Mechanical definitions
 from __future__ import annotations
 
 from dataclasses import dataclass, field, asdict
-from datetime import time
+from datetime import date, time
 from typing import Dict, List, Optional, Tuple
 
 import numpy as np
@@ -140,9 +140,21 @@ class Replay:
 RULES_MODE = "touch"      # "touch" = desk rules since 2026-11-16 (stops on a touch, half off at +1R); "close" = legacy (pre-Nov-16 audits)
 
 
+RULES_SWITCH_DATE = date(2026, 11, 16)   # the desk announced touch stops, half off at +1R and B-grades on this day
+
+
 def set_rules_mode(mode: str) -> None:
     global RULES_MODE
     RULES_MODE = "close" if str(mode).startswith("close") else "touch"
+
+
+def rules_mode_for(session: date, user_choice: str = "auto") -> str:
+    """Auto: sessions before 2026-11-16 replay under the legacy close-based rules (their audits were produced that way)."""
+    if str(user_choice).startswith("Legacy"):
+        return "close"
+    if str(user_choice).startswith("November"):
+        return "touch"
+    return "touch" if session >= RULES_SWITCH_DATE else "close"
 
 
 def _resolve(bars_after: pd.DataFrame, side: str, entry: float, stop: float, target: float,
@@ -369,6 +381,15 @@ def replay_a2(spx5: pd.DataFrame, put_node: float, call_node: float, min_fall: f
 
 
 # ── Archetype 3 — 3-ticker alignment breakout ─────────────────────────────────
+_mapped_extra: List[float] = []
+
+
+def set_mapped_extra(levels: List[float]) -> None:
+    """S2 levels (rounded shelves) and strike walls (rounded walls): the desk's tickets target them too."""
+    global _mapped_extra
+    _mapped_extra = list(levels)
+
+
 def replay_a3(spx5: pd.DataFrame, spy5: Optional[pd.DataFrame], qqq5: Optional[pd.DataFrame], em: float,
               levels: List[float], room_pts: float = 8.0, box_bars: int = 4, require_all: bool = True) -> Replay:
     bars = session_bars(spx5)
@@ -421,6 +442,10 @@ def replay_a3(spx5: pd.DataFrame, spy5: Optional[pd.DataFrame], qqq5: Optional[p
         # room to the next EM level in the direction of the break
         ups = sorted([l for l in levels if l > c])
         dns = sorted([l for l in levels if l < c], reverse=True)
+        if RULES_MODE == "touch":
+            extra = [x for x in (_mapped_extra or []) if x is not None]
+            ups = sorted(set([l for l in levels + extra if l > c]))
+            dns = sorted(set([l for l in levels + extra if l < c]), reverse=True)
         cands = ups if side == "long" else dns
         if RULES_MODE == "touch":
             # desk rules: the target is the first mapped level at least 1R (the box edge distance) away
@@ -532,8 +557,9 @@ def replay_a4(spx5: pd.DataFrame, c13: float, c14: float, c16: float, c17: float
         avg_vol = float(bars.iloc[:i]["volume"].mean()) if i > 0 else 0.0
         for side, shelf, wall in (("long", c14, c13), ("short", c16, c17)):
             beyond = (lambda x: x > shelf) if side == "long" else (lambda x: x < shelf)
-            if RULES_MODE == "touch" and beyond(float(b1["close"])) and beyond(float(b2["close"])):
-                entry = float(b2["close"])                       # desk: the ticket comes after the second close
+            room_ok = (float(b2["close"]) < wall) if side == "long" else (float(b2["close"]) > wall)
+            if RULES_MODE == "touch" and beyond(float(b1["close"])) and beyond(float(b2["close"])) and room_ok:
+                entry = float(b2["close"])                       # desk: the ticket comes after the second close; the 1.0 wall still ahead
                 risk = abs(entry - shelf)
                 rp = Replay(4, True, side, b2.name.strftime("%H:%M"), entry, shelf, wall, round(risk, 2),
                             trigger_text=(f"S4 shelf break runner: two 5-minute closes in a row {'above' if side == 'long' else 'below'} the "
@@ -564,7 +590,7 @@ def rule_levels(plan: Dict) -> Dict[str, float]:
     ('on gap-extended days, target outer credit fences C45/C46')."""
     g, sg, gap = plan["grid"], plan["strike_grid"], plan.get("gap") or {}
     dg = plan.get("desk_gap")
-    if dg and RULES_MODE == "touch":          # desk rules: 'the same formula with today's open as the middle'
+    if dg:                                     # desk: 'triggers re-anchored to the open (Cell C10), same as the live scanner' — same formula, open as the middle
         return {"mode": "gap", "C13": dg["C13"], "C14": dg["C14"], "C15": dg["C15"], "C16": dg["C16"], "C17": dg["C17"],
                 "put_node": dg["put_node"], "call_node": dg["call_node"], "em": dg["em"]}
     if gap.get("active"):
@@ -581,10 +607,12 @@ def rules_replay(spx5: pd.DataFrame, spy5: Optional[pd.DataFrame], qqq5: Optiona
     `grid` may be the standard set or the gap-day set from rule_levels()."""
     from core.workstation import eligible_archetypes
     el = eligible_archetypes(c6)
+    from core.workstation import round_to_strike as _r5
+    set_mapped_extra([put_node, call_node, _r5(grid["C13"]), _r5(grid["C17"])])
     levels = [grid["C17"], grid["C16"], grid["C15"], grid["C14"], grid["C13"]]
     results: Dict[int, Replay] = {}
     for a in (1, 2, 3, 4):
-        if a not in el["valid"] and not (a == 2):          # A2 is checked in every regime (Ch.4: all regimes)
+        if a not in el["valid"] and not (a == 2 and RULES_MODE == "close"):   # desk rules: only the day's two setups can fire (S2 needs VIX ≤ 18.5)
             continue
         if a == 1:
             results[1] = replay_a1(spx5, grid["C14"], grid["C15"], grid["C16"])
@@ -636,6 +664,18 @@ def rules_replay(spx5: pd.DataFrame, spy5: Optional[pd.DataFrame], qqq5: Optiona
 
 
 # ── live scanner: what qualifies right now on the current bars ───────────────
+def replay_after(spx5, spy5, qqq5, grid, em, put_node, call_node, c6, after_hhmm: str):
+    """Re-run the replay on the bars after a trigger (for the live-ticket scan)."""
+    hh, mm = map(int, after_hhmm.split(":")); cut = hh * 60 + mm
+    def _a(df):
+        if df is None or df.empty:
+            return df
+        m = df.index.hour * 60 + df.index.minute
+        return df[m > cut]
+    out = rules_replay(_a(spx5), _a(spy5), _a(qqq5), grid, em, put_node, call_node, c6)
+    return out["chosen"]
+
+
 def live_status(spx5: pd.DataFrame, spy5, qqq5, grid: Dict[str, float], em: float, put_node: float, call_node: float,
                 c6: float) -> Dict:
     """Same machinery as the replay, run on today's bars so far; also reports proximity to the trigger zones."""

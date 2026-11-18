@@ -78,6 +78,14 @@ All notable changes to the Azraël Desk app. Format: Keep a Changelog; versions 
   `core/execution.py`, `core/audit.py`, `utils/charts.py`, `core/scenario.py`, `utils/text.py`, `core/plan.py`,
   `.github/workflows/lock_0830.yml`, `desk_settings.example.toml`.
 
+## [2.0.4] — 2026-11-19
+### Added
+- Smoke test `test_every_vix_band_both_rule_sets_and_text_builders`: replay, banner (three clock states), levels post,
+  strike-grid post, ticket lines, score and compact audit text (every resolution) on a calm, a normal and a fast day under
+  both rule sets. This path is what raised the 2.0.1–2.0.3 KeyError; the harness now fails on it.
+- Reviewed every archetype- and resolution-keyed lookup in core/, views/ and utils/: all have entries for 1–4 / every resolution.
+- Files: `tests/test_smoke.py`, `CHANGELOG.md`.
+
 ## [2.0.3] — 2026-11-19
 ### Fixed
 - KeyError on fast days: the "not eligible" wording had no entry for S2 (it could never be banned before 2.0.1).

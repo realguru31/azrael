@@ -145,6 +145,48 @@ def test_journal_roundtrip_and_stats():
     assert stats["total_trades"] >= 1 and stats["discipline"] == 100.0
 
 
+def test_every_vix_band_both_rule_sets_and_text_builders():
+    """Regression for the 2.0.1–2.0.3 KeyError: run the replay, the banner, the post and the ticket builders on a calm,
+    a normal and a fast day, under both rule sets, on the demo bars."""
+    from core import rules as R, execution as X, scoring as SC, workstation as ws, audit as AU
+    from core.plan import build_plan
+    from utils.text import levels_post, strike_grid_post
+    from data import fetcher as F
+    import pandas as pd
+    for vix in (13.5, 16.5, 21.0):
+        for mode in ("close", "touch"):
+            R.set_rules_mode(mode)
+            plan = build_plan(SESS, "08:15", "08:20", 25000, 1.0, 8.0, 0.55, {"c6": vix}, None, None, "CAPITALCOM:SPX500")
+            assert plan["ok"], plan
+            lv = R.rule_levels(plan)
+            grid = {k: lv[k] for k in ("C13", "C14", "C15", "C16", "C17")}
+            d5 = F.session_slice(F.demo_bars("SPX", "5", 400), SESS)
+            spy = F.session_slice(F.demo_bars("SPY", "5", 400), SESS); qqq = F.session_slice(F.demo_bars("QQQ", "5", 400), SESS)
+            out = R.live_status(d5, spy, qqq, grid, lv["em"], lv["put_node"], lv["call_node"], vix)
+            assert "also_checked" in out and all("Not eligible" in x or "did not qualify" in x or "After the one setup" in x for x in out["also_checked"])
+            el = ws.eligible_archetypes(vix)
+            assert len(el["valid"]) == 2 and (2 in el["valid"]) == (vix <= 18.5)
+            for mins in (9 * 60 + 40, 10 * 60 + 50, 11 * 60 + 10):
+                b = X.banner(plan, lv, d5, float(d5["close"].iloc[-1]), mins, R.gate_test(d5), out, None, True)
+                assert b.headline
+            txt = levels_post(plan, "TEST DAY"); assert "TradingView script, its 9 inputs" in txt and "Upper wall" in txt
+            assert "King Node" in strike_grid_post(plan, "TEST DAY")
+            # a synthetic qualified replay drives the ticket, the score and the compact audit text for every resolution
+            r = R.Replay(3, True, "short", "10:50", 7738.45, 7742.58, 7705.28, 4.13, trigger_text="SPX closed the 10:50 bar at 7738.45, 4.13 pts below its 10:30 to 10:45 box (7742.58 to 7754.67, 12.09 pts wide); SPY 770.94 closed below its box low (771.30); QQQ 751.75 closed below its box low (753.16) on the same bar. Next EM level 7705.28, 33.17 pts of room.")
+            lines = X.ticket_lines(r, SESS.isoformat(), 25000); assert any(l.startswith("SKIP") for l in lines) and "SPXW" in lines[1]
+            sc = SC.score_idea(r, plan, lv, d5, spy, qqq, R.gate_test(d5), None, None, 11 * 60)
+            assert 0 <= sc.score <= 10 and len(sc.checks) == 10
+            for res in ("target", "stopped", "stopped_be", "close_through_entry", "flat_1130"):
+                r.resolution, r.exit_time, r.exit_price, r.r_multiple, r.pnl_pts, r.half_off, r.half_level, r.half_time = res, "11:20", 7710.0, 0.5, 2.0, res != "stopped", 7734.32, "11:00"
+                a = AU.SessionAudit(session="TEST DAY", settlement=7722.72, anchor=7666.45, vix=vix, vix_print_time="08:15", em=lv["em"],
+                                    c13=lv["C13"], c14=lv["C14"], c15=lv["C15"], c16=lv["C16"], c17=lv["C17"], put_node=lv["put_node"], call_node=lv["call_node"],
+                                    put_fence=7570, call_fence=7765, session_low=7700.51, session_low_time="11:25", session_high=7754.67, session_high_time="10:40",
+                                    range_pts=54.16, range_em=0.70, inside_1sigma=True, inside_half=True, walls_tested=[], replay=r.as_dict(),
+                                    also_checked=out["also_checked"], lesson="x")
+                assert "REPLAY" in AU.audit_text_compact(a) and "LESSON" in AU.audit_text_compact(a)
+    R.set_rules_mode("close")
+
+
 if __name__ == "__main__":
     import shutil
     for name, fn in list(globals().items()):

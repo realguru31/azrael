@@ -658,7 +658,7 @@ def rules_replay(spx5: pd.DataFrame, spy5: Optional[pd.DataFrame], qqq5: Optiona
             else:
                 also.append(f"Archetype {a} did not qualify: {r.not_qualified_reason}.")
         else:
-            need = {1: "needs VIX under 15", 3: "needs VIX at or above 15", 4: "needs VIX above 18.5"}[a]
+            need = {1: "needs VIX under 15", 2: "needs VIX 18.5 or under", 3: "needs VIX 15 or higher", 4: "needs VIX above 18.5"}[a]
             also.append(f"Not eligible at VIX {c6:.2f}: Archetype {a} ({need}).")
     return {"chosen": chosen, "results": results, "also_checked": also, "eligible": el}
 

@@ -78,6 +78,11 @@ All notable changes to the Azraël Desk app. Format: Keep a Changelog; versions 
   `core/execution.py`, `core/audit.py`, `utils/charts.py`, `core/scenario.py`, `utils/text.py`, `core/plan.py`,
   `.github/workflows/lock_0830.yml`, `desk_settings.example.toml`.
 
+## [2.0.3] — 2026-11-19
+### Fixed
+- KeyError on fast days: the "not eligible" wording had no entry for S2 (it could never be banned before 2.0.1).
+- Files: `core/rules.py`.
+
 ## [2.0.2] — 2026-11-18
 ### Changed — from a line-by-line read of the full Discord export
 - Live ticket = the first qualifying idea that is actually sent; an idea that is not sent / dropped / expired leaves the

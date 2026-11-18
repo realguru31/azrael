@@ -118,7 +118,10 @@ class Replay:
     stop: Optional[float] = None
     target: Optional[float] = None
     risk_pts: Optional[float] = None
-    resolution: Optional[str] = None           # "target" | "stopped" | "flat_1130" | "open"
+    resolution: Optional[str] = None           # "target" | "stopped" | "stopped_be" | "close_through_entry" | "flat_1130" | "open"
+    half_off: bool = False
+    half_time: Optional[str] = None
+    half_level: Optional[float] = None
     exit_time: Optional[str] = None
     exit_price: Optional[float] = None
     pnl_pts: Optional[float] = None
@@ -134,59 +137,124 @@ class Replay:
         return asdict(self)
 
 
+RULES_MODE = "touch"      # "touch" = desk rules since 2026-11-16 (stops on a touch, half off at +1R); "close" = legacy (pre-Nov-16 audits)
+
+
+def set_rules_mode(mode: str) -> None:
+    global RULES_MODE
+    RULES_MODE = "close" if str(mode).startswith("close") else "touch"
+
+
 def _resolve(bars_after: pd.DataFrame, side: str, entry: float, stop: float, target: float,
-             stop_mode: str = "close", two_close_level: Optional[float] = None) -> Tuple[str, Optional[pd.Timestamp], float, float]:
-    """Walk forward bar by bar. Target = first touch (high/low). Stop = 5-minute close through the stop level
-    (or two consecutive closes through `two_close_level`). Flat at the 11:30 bar close if still open.
-    Returns (resolution, exit_time, exit_price, best_excursion_pts)."""
+             stop_mode: Optional[str] = None, two_close_level: Optional[float] = None) -> Tuple[str, Optional[pd.Timestamp], float, float, Dict]:
+    """Walk forward bar by bar.
+    TOUCH mode (desk rules since 2026-11-16): the stop fires on a touch of the stop level (bar low/high), capped at −1R.
+    Half comes off on a touch of entry ± 1R; the stop on the rest moves to the entry (touch). The rest exits at the target
+    touch, on a 5-minute close back through the entry, or flat at 11:30. R = 0.5 × (+1) + 0.5 × (rest R) once half is off.
+    CLOSE mode (legacy): stop = 5-minute close through the level (or two consecutive closes through `two_close_level`).
+    Returns (resolution, exit_time, exit_price, best_excursion_pts, detail)."""
+    mode = stop_mode or RULES_MODE
     best = 0.0
     consecutive = 0
+    sign = 1.0 if side == "long" else -1.0
+    risk = abs(entry - stop)
+    half_lvl = entry + sign * risk
+    half_off = False
+    half_time = None
+    detail: Dict = {"mode": mode, "half_level": round(half_lvl, 2), "half_off": False, "half_time": None, "r_rest": None}
+
+    def _r_now(px: float) -> float:
+        rest = sign * (px - entry) / risk if risk else 0.0
+        return 0.5 * 1.0 + 0.5 * rest if half_off else rest
+
     for ts, r in bars_after.iterrows():
         t = ts.time()
-        if side == "long":
-            best = max(best, float(r["high"]) - entry)
-            if float(r["high"]) >= target:
-                return "target", ts, target, best
-            if float(r["close"]) <= stop:
-                return "stopped", ts, float(r["close"]), best
+        hi, lo, c = float(r["high"]), float(r["low"]), float(r["close"])
+        best = max(best, sign * ((hi if side == "long" else lo) - entry))
+        if mode == "close":
+            if (side == "long" and hi >= target) or (side == "short" and lo <= target):
+                return "target", ts, target, best, detail
+            if (side == "long" and c <= stop) or (side == "short" and c >= stop):
+                return "stopped", ts, c, best, detail
             if two_close_level is not None:
-                consecutive = consecutive + 1 if float(r["close"]) < two_close_level else 0
+                hit = (c < two_close_level) if side == "long" else (c > two_close_level)
+                consecutive = consecutive + 1 if hit else 0
                 if consecutive >= 2:
-                    return "stopped", ts, float(r["close"]), best
-        else:
-            best = max(best, entry - float(r["low"]))
-            if float(r["low"]) <= target:
-                return "target", ts, target, best
-            if float(r["close"]) >= stop:
-                return "stopped", ts, float(r["close"]), best
-            if two_close_level is not None:
-                consecutive = consecutive + 1 if float(r["close"]) > two_close_level else 0
-                if consecutive >= 2:
-                    return "stopped", ts, float(r["close"]), best
-        if t >= time(11, 25):                       # the 11:25 bar closes at 11:30 -> flat by 11:30
-            return "flat_1130", ts, float(r["close"]), best
-    return "open", None, float(bars_after["close"].iloc[-1]) if len(bars_after) else entry, best
+                    return "stopped", ts, c, best, detail
+            if t >= time(11, 25):
+                return "flat_1130", ts, c, best, detail
+            continue
+        # ── touch mode
+        cur_stop = entry if half_off else stop
+        stop_hit = (lo <= cur_stop) if side == "long" else (hi >= cur_stop)
+        tgt_hit = (hi >= target) if side == "long" else (lo <= target)
+        half_hit = (hi >= half_lvl) if side == "long" else (lo <= half_lvl)
+        if not half_off and stop_hit and not half_hit:
+            return "stopped", ts, cur_stop, best, detail
+        if not half_off and half_hit:
+            half_off = True; half_time = ts; detail.update(half_off=True, half_time=ts.strftime("%H:%M"))
+            if tgt_hit:
+                detail["r_rest"] = round(sign * (target - entry) / risk, 2)
+                return "target", ts, target, best, detail
+            continue
+        if half_off and tgt_hit:
+            detail["r_rest"] = round(sign * (target - entry) / risk, 2)
+            return "target", ts, target, best, detail
+        if half_off and stop_hit:
+            detail["r_rest"] = 0.0
+            return "stopped_be", ts, entry, best, detail            # the rest stopped at the entry (breakeven)
+        if half_off and ((side == "long" and c < entry) or (side == "short" and c > entry)):
+            detail["r_rest"] = round(sign * (c - entry) / risk, 2)
+            return "close_through_entry", ts, c, best, detail      # 5-minute close back through the entry
+        if stop_hit and not half_off:
+            return "stopped", ts, cur_stop, best, detail
+        if t >= time(11, 25):
+            detail["r_rest"] = round(sign * (c - entry) / risk, 2) if half_off else None
+            return "flat_1130", ts, c, best, detail
+    return "open", None, float(bars_after["close"].iloc[-1]) if len(bars_after) else entry, best, detail
 
 
 def _finish(rp: Replay, bars_after: pd.DataFrame, two_close_level: Optional[float] = None) -> Replay:
-    res, ts, px, best = _resolve(bars_after, rp.side, rp.entry, rp.stop, rp.target, two_close_level=two_close_level)
+    res, ts, px, best, detail = _resolve(bars_after, rp.side, rp.entry, rp.stop, rp.target, two_close_level=two_close_level)
     rp.resolution, rp.exit_price, rp.best_excursion = res, px, round(best, 2)
     rp.exit_time = ts.strftime("%H:%M") if ts is not None else None
-    rp.pnl_pts = round((px - rp.entry) if rp.side == "long" else (rp.entry - px), 2)
-    rp.r_multiple = round(rp.pnl_pts / rp.risk_pts, 2) if rp.risk_pts else None
+    rp.half_off, rp.half_time, rp.half_level = bool(detail.get("half_off")), detail.get("half_time"), detail.get("half_level")
+    sign = 1.0 if rp.side == "long" else -1.0
+    if detail.get("mode") == "touch" and rp.half_off and rp.risk_pts:
+        rest_r = detail.get("r_rest") if detail.get("r_rest") is not None else sign * (px - rp.entry) / rp.risk_pts
+        rp.r_multiple = round(0.5 * 1.0 + 0.5 * rest_r, 2)                    # half at +1R, half at the rest's exit
+        rp.pnl_pts = round(rp.r_multiple * rp.risk_pts, 2)
+    else:
+        rp.pnl_pts = round((px - rp.entry) if rp.side == "long" else (rp.entry - px), 2)
+        rp.r_multiple = round(rp.pnl_pts / rp.risk_pts, 2) if rp.risk_pts else None
     exit_close = bar_close_time(ts).strftime("%H:%M") if ts is not None else "—"
+    if RULES_MODE == "touch":                      # the desk's words since 2026-11-16: stops fire on a touch
+        rp.invalidation_text = (rp.invalidation_text.replace("A 5-minute close back inside the box", "A touch back inside the box")
+                                .replace("A 5-minute close more than", "A touch more than")
+                                .replace("A 5-minute close below", "A touch of").replace("A 5-minute close above", "A touch of")
+                                .replace("(node − ", "(5 pts through the node, ").replace("(node + ", "(5 pts through the node, "))
+    half_txt = (f" Half came off at {rp.half_level:.2f} (+1R) on the {rp.half_time} bar, and the stop on the rest moved to the entry." if rp.half_off else "")
     if res == "target":
-        rp.resolution_text = (f"Target: the {rp.exit_time} bar reached {rp.target:.2f}, +{rp.pnl_pts:.2f} pts "
-                              f"(+{rp.r_multiple:.2f}R on the index). Best excursion {rp.best_excursion:.2f} pts.")
+        rp.resolution_text = (f"Target: the {rp.exit_time} bar reached {rp.target:.2f}: {rp.r_multiple:+.2f}R on the index"
+                              + (f" (+0.5R + half of {((rp.r_multiple - 0.5) * 2):+.2f}R)." if rp.half_off else ".") + half_txt
+                              + f" Best excursion {rp.best_excursion:.2f} pts.")
     elif res == "stopped":
-        over = abs(rp.r_multiple) - 1 if rp.r_multiple is not None else 0
-        rp.resolution_text = (f"Stopped: the {rp.exit_time} bar closed at {px:.2f}, {rp.pnl_pts:+.2f} pts "
-                              f"({rp.r_multiple:+.2f}R on the index). The stop is a 5-minute close, so the exit "
-                              f"{'overshot' if over > 0 else 'landed within'} the planned 1R by {abs(over):.2f}R. "
-                              f"Best excursion before the exit: {rp.best_excursion:.2f} pts in favor.")
+        if RULES_MODE == "touch":
+            rp.resolution_text = (f"Stopped on a touch of {rp.stop:.2f} on the {rp.exit_time} bar: {rp.r_multiple:+.2f}R on the index. "
+                                  f"Best excursion before the stop: {rp.best_excursion:.2f} pts.")
+        else:
+            over = abs(rp.r_multiple) - 1 if rp.r_multiple is not None else 0
+            rp.resolution_text = (f"Stopped: the {rp.exit_time} bar closed at {px:.2f}, {rp.pnl_pts:+.2f} pts "
+                                  f"({rp.r_multiple:+.2f}R on the index). The stop is a 5-minute close, so the exit "
+                                  f"{'overshot' if over > 0 else 'landed within'} the planned 1R by {abs(over):.2f}R. "
+                                  f"Best excursion before the exit: {rp.best_excursion:.2f} pts in favor.")
+    elif res == "stopped_be":
+        rp.resolution_text = (f"Half off at +1R, then the rest stopped at the entry {rp.entry:.2f} on the {rp.exit_time} bar: {rp.r_multiple:+.2f}R." + half_txt)
+    elif res == "close_through_entry":
+        rp.resolution_text = (f"Half off at +1R, then the {rp.exit_time} bar closed back through the entry ({px:.2f}): {rp.r_multiple:+.2f}R." + half_txt)
     elif res == "flat_1130":
-        rp.resolution_text = (f"Flat at the 11:30 desk shutdown: closed at {px:.2f}, {rp.pnl_pts:+.2f} pts "
-                              f"({rp.r_multiple:+.2f}R). Best excursion {rp.best_excursion:.2f} pts.")
+        rp.resolution_text = (f"Flat at the 11:30 desk shutdown: closed at {px:.2f}, {rp.r_multiple:+.2f}R on the index." + half_txt
+                              + f" Best excursion {rp.best_excursion:.2f} pts.")
     else:
         rp.resolution_text = (f"Still open at the last bar ({px:.2f}, {rp.pnl_pts:+.2f} pts, {rp.r_multiple:+.2f}R). "
                               f"Best excursion {rp.best_excursion:.2f} pts.")
@@ -353,14 +421,25 @@ def replay_a3(spx5: pd.DataFrame, spy5: Optional[pd.DataFrame], qqq5: Optional[p
         # room to the next EM level in the direction of the break
         ups = sorted([l for l in levels if l > c])
         dns = sorted([l for l in levels if l < c], reverse=True)
-        nxt = ups[0] if side == "long" and ups else dns[0] if side == "short" and dns else None
-        if nxt is None:
-            near_misses.append(f"{ts:%H:%M} no EM level beyond the break")
-            continue
-        room = (nxt - c) if side == "long" else (c - nxt)
-        if room <= room_pts:
-            near_misses.append(f"{ts:%H:%M} only {room:.2f} pts of room to {nxt:.2f} (needs > {room_pts:.0f})")
-            continue
+        cands = ups if side == "long" else dns
+        if RULES_MODE == "touch":
+            # desk rules: the target is the first mapped level at least 1R (the box edge distance) away
+            risk_here = abs(c - (box_lo if side == "short" else box_hi))
+            cands = [l for l in cands if abs(l - c) >= risk_here]
+            nxt = cands[0] if cands else None
+            if nxt is None:
+                near_misses.append(f"{ts:%H:%M} no mapped level at least 1R ({risk_here:.2f} pts) beyond the break")
+                continue
+            room = (nxt - c) if side == "long" else (c - nxt)
+        else:
+            nxt = cands[0] if cands else None
+            if nxt is None:
+                near_misses.append(f"{ts:%H:%M} no EM level beyond the break")
+                continue
+            room = (nxt - c) if side == "long" else (c - nxt)
+            if room <= room_pts:
+                near_misses.append(f"{ts:%H:%M} only {room:.2f} pts of room to {nxt:.2f} (needs > {room_pts:.0f})")
+                continue
         stop = box_hi if side == "long" else box_lo
         risk = abs(c - stop)
         conf = []
@@ -453,6 +532,15 @@ def replay_a4(spx5: pd.DataFrame, c13: float, c14: float, c16: float, c17: float
         avg_vol = float(bars.iloc[:i]["volume"].mean()) if i > 0 else 0.0
         for side, shelf, wall in (("long", c14, c13), ("short", c16, c17)):
             beyond = (lambda x: x > shelf) if side == "long" else (lambda x: x < shelf)
+            if RULES_MODE == "touch" and beyond(float(b1["close"])) and beyond(float(b2["close"])):
+                entry = float(b2["close"])                       # desk: the ticket comes after the second close
+                risk = abs(entry - shelf)
+                rp = Replay(4, True, side, b2.name.strftime("%H:%M"), entry, shelf, wall, round(risk, 2),
+                            trigger_text=(f"S4 shelf break runner: two 5-minute closes in a row {'above' if side == 'long' else 'below'} the "
+                                          f"{'+' if side == 'long' else '−'}0.5 shelf {shelf:.2f} ({b1.name:%H:%M} {float(b1['close']):.2f}, {b2.name:%H:%M} {float(b2['close']):.2f}); "
+                                          f"the first close was a WATCH, the ticket came after the second at {entry:.2f}. Target the wall {wall:.2f}."),
+                            invalidation_text=f"A touch back at the shelf {shelf:.2f}. Planned risk {risk:.2f} pts = 1R.")
+                return _finish(rp, _after(bars, b2.name))
             if beyond(float(b1["close"])) and beyond(float(b2["close"])) and float(b1["volume"]) >= avg_vol \
                     and beyond(float(b3["close"])):
                 entry = float(b4["open"])
@@ -475,6 +563,10 @@ def rule_levels(plan: Dict) -> Dict[str, float]:
     shelves C41/C42, anchor C39, King Nodes C43/C44, and the 1.0 targets become the fences C45/C46
     ('on gap-extended days, target outer credit fences C45/C46')."""
     g, sg, gap = plan["grid"], plan["strike_grid"], plan.get("gap") or {}
+    dg = plan.get("desk_gap")
+    if dg and RULES_MODE == "touch":          # desk rules: 'the same formula with today's open as the middle'
+        return {"mode": "gap", "C13": dg["C13"], "C14": dg["C14"], "C15": dg["C15"], "C16": dg["C16"], "C17": dg["C17"],
+                "put_node": dg["put_node"], "call_node": dg["call_node"], "em": dg["em"]}
     if gap.get("active"):
         return {"mode": "gap", "C13": gap["c45"], "C14": gap["c41"], "C15": gap["c39"], "C16": gap["c42"], "C17": gap["c46"],
                 "put_node": gap["c44"], "call_node": gap["c43"], "em": gap["c40"]}

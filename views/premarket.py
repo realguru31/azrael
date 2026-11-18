@@ -7,7 +7,7 @@ import streamlit as st
 from core import workstation as ws
 from data import chain as CH
 from utils import charts as C
-from utils.text import strike_grid_post
+from utils.text import strike_grid_post, levels_post
 from utils.timeutil import fmt_session_title
 from views import common as U
 
@@ -108,7 +108,9 @@ def _render(cfg):
     st.markdown("### Strike grid — the desk bot's #premarket-math post, reproduced")
     left, right = st.columns([0.5, 0.5])
     with left:
-        st.code(strike_grid_post(plan, fmt_session_title(sess)), language=None)
+        st.code(levels_post(plan, fmt_session_title(sess)), language=None, wrap_lines=True)
+        with st.expander("Desk-bot strike grid (pre-November format)"):
+            st.code(strike_grid_post(plan, fmt_session_title(sess)), language=None, wrap_lines=True)
     with right:
         exp = plan["expiries"][0]
         ch, ch_src = U.chain(exp, "SPX", U.bucket())

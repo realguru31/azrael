@@ -25,7 +25,7 @@ from __future__ import annotations
 
 import math
 from dataclasses import dataclass, asdict
-from typing import Dict, List, Optional
+from typing import Tuple, Dict, List, Optional
 
 SQRT_1_252 = math.sqrt(1 / 252)
 SQRT_5_252 = math.sqrt(5 / 252)
@@ -174,16 +174,20 @@ ARCHETYPE_LONG = {
 }
 
 
+DAY_NAME = {1: "Calm day", 2: "Normal day", 3: "Fast day"}
+
+
 def eligible_archetypes(c6: float) -> Dict[str, List[int]]:
-    """Valid / banned per regime, exactly as the desk's regime filter states."""
+    """The desk's November rules (#the-4-setups, pinned 2026-11-17): the VIX band decides which TWO setups run.
+    Calm (VIX < 15): S1 shelf fade + S2 rejection · Normal (15–18.5): S2 rejection + S3 three-ticker break ·
+    Fast (> 18.5): S3 three-ticker break + S4 shelf break runner. S2 is only allowed with VIX 18.5 or under."""
     r = regime_code(c6)
     if r == 1:
-        return {"valid": [1, 2], "banned": [3, 4], "note": "Positive Gamma: dealer dampening active; breakouts get faded."}
+        return {"valid": [1, 2], "banned": [3, 4], "note": "Calm day (VIX under 15): S1 shelf fade and S2 rejection. Fades toward the middle."}
     if r == 2:
-        return {"valid": [2, 3], "banned": [4], "note": "Balanced Gamma: no sustained air pockets. Archetype 1 is "
-                "Positive-Gamma only (the manual's own worked example runs it at 15.13, right on the boundary)."}
-    return {"valid": [3, 4], "banned": [1], "note": "Negative Gamma: counter-trend fading is banned. Archetype 2 is "
-            "permitted in all regimes (Ch.4) but is not the desk's favoured setup here."}
+        return {"valid": [2, 3], "banned": [1, 4], "note": "Normal day (VIX 15 to 18.5): S2 rejection and S3 three-ticker break."}
+    return {"valid": [3, 4], "banned": [1, 2], "note": "Fast day (VIX above 18.5): S3 three-ticker break and S4 shelf break runner. "
+            "Breaks beyond the shelves tend to run — the desk never fades a move today."}
 
 
 # ── C27–C31 and the credit-spread sizing formula ──────────────────────────────
@@ -273,12 +277,23 @@ class StrikeGrid:
         return asdict(self)
 
 
+def fence_levels(anchor: float, em: float, step: float = 5.0) -> Tuple[float, float]:
+    """#credit-spreads (2026-11-17): strikes sit 'past the wall by 5 pts, or at the 1.25× fence, whichever is farther'.
+    Verified against the 8:30 posts of Nov 17 (7550 / 7285) and Nov 18 (7480 / 7200)."""
+    call_f = max(round_to_strike(anchor + em, step) + step, round_to_strike(anchor + 1.25 * em, step))
+    put_f = min(round_to_strike(anchor - em, step) - step, round_to_strike(anchor - 1.25 * em, step))
+    return call_f, put_f
+
+
 def strike_grid(anchor: float, em: float, step: float = 5.0) -> StrikeGrid:
+    """King Nodes = the shelves rounded to the nearest 5-pt strike ('S2 levels'; the desk: 'they are not option data').
+    Walls rounded. Fences per fence_levels()."""
+    cf, pf = fence_levels(anchor, em, step)
     return StrikeGrid(
         anchor=anchor, em=em, step=step,
         call_node=round_to_strike(anchor + 0.5 * em, step), put_node=round_to_strike(anchor - 0.5 * em, step),
         upper_wall=round_to_strike(anchor + em, step), lower_wall=round_to_strike(anchor - em, step),
-        call_fence=round_to_strike(anchor + 1.25 * em, step), put_fence=round_to_strike(anchor - 1.25 * em, step),
+        call_fence=cf, put_fence=pf,
     )
 
 
@@ -334,6 +349,45 @@ def meic_strikes(c13: float, c17: float, step: float = 5.0, width: float = 10.0)
     sp = round_to_strike(c17, step) - step
     return {"short_call": sc, "long_call": sc + width, "short_put": sp, "long_put": sp - width,
             "upper_strike_wall": round_to_strike(c13, step), "lower_strike_wall": round_to_strike(c17, step)}
+
+
+def desk_gap_levels(open_px: float, c6: float) -> Dict[str, float]:
+    """#reading-the-levels (2026-11-17): on a gap morning 'the same formula with today's open as the middle'. Verified on
+    Nov 9: close 7376.86, open 7443.53, VIX ≈ 23.45 → new upper shelf 7498.51. The live tickets use these levels; the 08:30
+    levels stay on the chart as gap-fill targets."""
+    em = open_px * (c6 / 100.0) * math.sqrt(1.0 / 252.0)
+    g = {"middle": open_px, "em": em, "C13": open_px + em, "C14": open_px + 0.5 * em, "C15": open_px, "C16": open_px - 0.5 * em, "C17": open_px - em}
+    g["call_node"], g["put_node"] = round_to_strike(g["C14"]), round_to_strike(g["C16"])
+    g["call_fence"], g["put_fence"] = fence_levels(open_px, em)
+    return {k: (round(v, 2) if isinstance(v, float) else v) for k, v in g.items()}
+
+
+def if_it_breaks(g: StandardGrid, gex: Optional[Dict] = None) -> str:
+    """The 8:30 post's 'If it breaks' line: room from each shelf to the next level, with any GEX level on the way."""
+    def on_way(lo: float, hi: float) -> str:
+        if not gex:
+            return ""
+        hits = [f"{k} {v:,.0f}" for k, v in (("put wall", gex.get("put_wall")), ("call wall", gex.get("call_wall")), ("flip", gex.get("flip")))
+                if v and lo < v < hi]
+        return f" ({', '.join(hits)} on the way)" if hits else ""
+    down = f"below {g.c16:,.2f}, the next level is {g.c17:,.2f}, {g.c16 - g.c17:,.0f} pts lower{on_way(g.c17, g.c16)}"
+    up = f"Above {g.c14:,.2f}, the next level is {g.c13:,.2f}, {g.c13 - g.c14:,.0f} pts higher{on_way(g.c14, g.c13)}"
+    return f"If it breaks: {down}. {up}."
+
+
+SIZE_ACCOUNTS = (50_000, 100_000, 250_000, 500_000)
+
+
+def size_table(risk_pts: float, pct: float = 0.01, b_grade: bool = False) -> Dict[str, str]:
+    """The ticket's SIZE line: stop in SPX points × $100 per SPX contract, a tenth per XSP, at 1 % of the account (B-grade: half)."""
+    out = {}
+    per_spx = risk_pts * 100.0; per_xsp = per_spx / 10.0
+    for acct in SIZE_ACCOUNTS:
+        budget = acct * pct * (0.5 if b_grade else 1.0)
+        n_spx = int(budget // per_spx) if per_spx else 0
+        n_xsp = int(budget // per_xsp) if per_xsp else 0
+        out[f"${acct // 1000}k"] = f"{n_spx} SPX" if n_spx >= 1 else f"{n_xsp} XSP"
+    return out
 
 
 def micro_desk(grid: StandardGrid, sg: "StrikeGrid") -> Dict[str, Dict[str, float]]:

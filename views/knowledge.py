@@ -5,6 +5,24 @@ import streamlit as st
 
 from views import common as U
 
+NOV_RULES = """
+**THE DESK'S RULES SINCE 16 NOVEMBER 2026** (from #01_start_here, #the-4-setups, #03_the_daily_routine, #credit-spreads)
+1. Risk at most 1 % of your account on a ticket; B-grade setups half that. 2. Nothing before 9:50. 3. At most one ticket a day.
+4. **Take half off at +1R, then the stop on the rest moves to your entry.** 5. Flat by 11:30, win or lose.
+**Stops fire on a touch** (any print). The rest exits at the target, on a 5-min close back through your entry, or at 11:30.
+**Skip price**: if SPX is already 0.5R past the entry, skip the ticket (from there the stop costs 1.5R).
+**Which two setups run** — Calm (VIX < 15): S1 shelf fade + S2 rejection · Normal (15–18.5): S2 + S3 three-ticker break · Fast (> 18.5): S3 + S4 shelf break runner.
+S1: after 9:50 SPX tests a shelf, two candles hold it (no close > 8 pts through), the next closes back toward the middle; stop a touch 8 pts beyond; target the middle.
+S2: SPX runs 15+ pts INTO an S2 level (a shelf rounded to the nearest 5-pt strike) and the candle closes back with a wick > half its range; stop a touch 5 pts through or two closes through; target halfway back.
+S3: SPX, SPY and QQQ close the same 5-min candle outside their last 20 minutes of range — one candle is enough; stop a touch back inside the box; target the next level at least 1R away.
+S4: two 5-min closes in a row beyond a shelf (the first is a WATCH, the ticket comes after the second); stop a touch back at the shelf; target the wall.
+**B-grade**: nothing met every rule by 10:45 → the desk may post the closest setup at half size (score ≥ 3.0; a full ticket needs 4.0 of 10).
+**Gap morning**: GAP when the 9:30 open is beyond a wall or 0.75 % or more from the close → the same formula with the open as the middle; tickets use the new levels, the 8:30 levels stay as gap-fill targets.
+**Credit spreads (9:50)**: VIX < 15 iron condor both sides 10-wide ≤ 1 % · 15–18.5 one side before 11:30, 10-wide, ≤ 0.75 % · 18.5–22 one side 15-wide, no condor, ≤ 1 % · > 22 none. Strikes past the wall by 5 pts or at the 1.25× fence, whichever is farther. 5-point rule: within 5 pts of a sold strike, close or roll 1 day out and 5 pts further.
+**GEX line (8:30)**: positive → moves tend to stall, fades work; negative → moves stretch, trade breaks. Put wall / call wall / flip line.
+**Since 2016**: closed inside the walls 82 % of days; touched a shelf 77 %; a wall 31 % (44 % with VIX > 22); a fence 18 % (27 % with VIX > 22).
+"""
+
 LAWS = """
 **The 4 non-negotiable desk laws**
 1. **ONE structured setup per session.** Target hit or 1R stop hit = the day is over. Screens off before the 11:30 theta grind.
@@ -90,7 +108,7 @@ def render(cfg, plan, label):
     st.markdown("### Desk knowledge — the rules, not the theory")
     t = st.tabs(["Laws & SOP", "Archetypes", "Regimes", "Credit spreads", "Risk & discipline", "Case studies"])
     with t[0]:
-        st.markdown(LAWS); st.markdown(SOP)
+        st.markdown(NOV_RULES); st.markdown("---"); st.markdown(LAWS); st.markdown(SOP)
     with t[1]:
         st.markdown(ARCH)
     with t[2]:

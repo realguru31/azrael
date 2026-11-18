@@ -8,6 +8,7 @@ import pandas as pd
 from zoneinfo import ZoneInfo
 
 from core import workstation as ws
+from core import rules as R
 from core.rules import replay_a3, replay_a2, gate_test, session_bars
 from core.audit import build_audit, audit_text
 from data.chain import oi_king_node
@@ -117,6 +118,7 @@ def _bars(session, rows):
 
 
 def test_a3_replay_matches_desk_audit():
+    R.set_rules_mode("close")                    # the Sep 30 desk audit was produced under the pre-Nov-16 rules (stops on a close)
     s = date(2026, 9, 30)
     # box 10:30–10:45 = 7702.43–7715.73 ; 10:50 close 7721.74 ; 10:55 close 7714.75 (stopped)
     rows = [("09:30", 7689, 7695, 7686, 7692, 900), ("09:35", 7692, 7702, 7690, 7700, 900), ("09:40", 7700, 7705, 7695, 7703, 900),
@@ -171,6 +173,47 @@ def test_gap_mode_levels_and_micro():
     approx(m["XSP"]["C15"], 767.08); approx(m["XSP"]["put_node"], 763.0)
     lad = w.sizing_ladder(250, 8, 0.55)
     assert lad["1R"].c29 == 0 and lad["XSP 1R"].c29 == 5            # $44 risk per XSP contract -> 5 contracts on $250
+
+
+def test_touch_rules_stop_capped_and_half_off():
+    """Desk rules since 2026-11-16: the stop fires on a touch (−1.00R, never more); half off at +1R then the stop moves to entry."""
+    R.set_rules_mode("touch")
+    s = date(2026, 9, 30)
+    rows = [("09:30", 7689, 7695, 7686, 7692, 900), ("09:35", 7692, 7702, 7690, 7700, 900), ("09:40", 7700, 7705, 7695, 7703, 900),
+            ("09:45", 7703, 7706, 7692, 7705, 900), ("09:50", 7705, 7709.5, 7702, 7708, 900), ("09:55", 7708, 7709, 7704, 7706, 900),
+            ("10:00", 7706, 7709.9, 7703, 7708, 900), ("10:05", 7708, 7721.39, 7708, 7714.29, 900), ("10:10", 7714, 7716, 7709, 7711, 900),
+            ("10:15", 7711, 7709, 7700, 7702, 900), ("10:20", 7702, 7712, 7701, 7710, 900), ("10:25", 7710, 7716, 7704, 7711, 900),
+            ("10:30", 7711, 7715.73, 7702.43, 7712, 900), ("10:35", 7712, 7715, 7705, 7710, 900), ("10:40", 7710, 7714, 7704, 7711, 900),
+            ("10:45", 7711, 7713, 7703, 7711, 900), ("10:50", 7711, 7722.88, 7710, 7721.74, 1500), ("10:55", 7721.74, 7722.88, 7712, 7714.75, 1300),
+            ("11:00", 7714.75, 7716, 7708, 7712, 900), ("11:05", 7712, 7714, 7706, 7711, 900)]
+    spx = _bars(s, rows); spy = _bars(s, [(t, o / 10, h / 10, l / 10, c / 10, v) for t, o, h, l, c, v in rows])
+    qqq = _bars(s, [(t, o / 10.3, h / 10.3, l / 10.3, c / 10.3, v) for t, o, h, l, c, v in rows])
+    g = ws.standard_grid(7670.84, 16.11); levels = [g.c17, g.c16, g.c15, g.c14, g.c13]
+    rp = replay_a3(spx, spy, qqq, g.c12, levels)
+    assert rp.qualified and rp.resolution == "stopped" and rp.exit_price == rp.stop and rp.r_multiple == -1.0
+    # half-off: a long that reaches +1R then stops at the entry → +0.5R
+    rows2 = [("09:30", 7600, 7606, 7596, 7602, 900), ("09:35", 7602, 7608, 7598, 7605, 900), ("09:40", 7605, 7610, 7601, 7607, 900),
+             ("09:45", 7607, 7611, 7603, 7608, 900), ("09:50", 7608, 7612, 7604, 7609, 900), ("09:55", 7609, 7612, 7605, 7610, 900),
+             ("10:00", 7610, 7613, 7606, 7611, 900), ("10:05", 7611, 7613.5, 7606.5, 7612, 900), ("10:10", 7612, 7620, 7611, 7619.5, 1800),
+             ("10:15", 7619.5, 7630, 7619, 7628, 1200), ("10:20", 7628, 7629, 7617, 7618, 900), ("10:25", 7618, 7624, 7612, 7620, 900),
+             ("11:25", 7620, 7622, 7618, 7621, 900)]
+    spx2 = _bars(s, rows2); spy2 = _bars(s, [(t, o / 10, h / 10, l / 10, c / 10, v) for t, o, h, l, c, v in rows2])
+    qqq2 = _bars(s, [(t, o / 10.3, h / 10.3, l / 10.3, c / 10.3, v) for t, o, h, l, c, v in rows2])
+    g2 = ws.standard_grid(7610.0, 16.0); lv2 = [g2.c17, g2.c16, g2.c15, g2.c14, g2.c13]
+    rp2 = replay_a3(spx2, spy2, qqq2, g2.c12, lv2)
+    assert rp2.qualified and rp2.side == "long" and rp2.half_off and rp2.resolution == "stopped_be" and rp2.r_multiple == 0.5
+    R.set_rules_mode("close")
+
+
+def test_fence_rule_matches_nov_posts():
+    """#credit-spreads: 'past the wall by 5 pts, or at the 1.25x fence, whichever is farther' — Nov 17 and Nov 18 posts."""
+    g = ws.standard_grid(7416.59, 22.76); sg = ws.strike_grid(g.c15, g.c12)
+    assert (sg.call_fence, sg.put_fence) == (7550, 7285) and (sg.call_node, sg.put_node) == (7470, 7365)
+    g = ws.standard_grid(7340.53, 24.49); sg = ws.strike_grid(g.c15, g.c12)
+    assert (sg.call_fence, sg.put_fence) == (7480, 7200) and (sg.call_node, sg.put_node) == (7395, 7285)
+    assert abs(g.c13 - 7453.77) < 0.01 and abs(g.c17 - 7227.29) < 0.01
+    gap = ws.desk_gap_levels(7443.53, 23.45)       # Nov 9 example: new upper shelf 7498.51
+    assert abs(gap["C14"] - 7498.51) < 0.3
 
 
 def test_oi_king_node_tie_break():

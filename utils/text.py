@@ -18,6 +18,36 @@ def pct(x: Optional[float], nd: int = 2) -> str:
     return "—" if x is None else f"{x:+.{nd}f}%"
 
 
+def levels_post(plan: Dict, session_title: str) -> str:
+    """'8:30 AM LEVELS' in the desk's format since 2026-11-17, including the TradingView script line (9 inputs, top to
+    bottom: call fence / call S2 level / +1.0 wall / +0.5 shelf / middle / −0.5 shelf / −1.0 wall / put S2 level / put fence)."""
+    g, sg, i = plan["grid"], plan["strike_grid"], plan["inputs"]
+    c6 = i["c6"]
+    day = ("Calm day: moves away from the close tend to run out at the shelves and drift back." if c6 < 15 else
+           "Normal day: two-way auction between the shelves; let a setup decide." if c6 <= 18.5 else
+           "Fast market expected: breaks beyond the shelves tend to run, so the desk never fades a move today.")
+    L = [f"8:30 AM LEVELS | {session_title}", f"Today: {day}", "SPX levels",
+         f"Upper wall {g['c13']:.2f}", f"Upper shelf {g['c14']:.2f}", f"Middle (yesterday's close) {g['c15']:.2f}",
+         f"Lower shelf {g['c16']:.2f}", f"Lower wall {g['c17']:.2f}",
+         f"Expected move today: +/-{g['c12']:.2f} pts (VIX {c6:.2f})."]
+    gx = plan.get("gex")
+    if gx:
+        parts = [f"GEX at 8:30 ({gx['note']}): {gx['sign']} ({gx['net_m']:+,.0f}M), so dealer hedging tends to "
+                 f"{'stretch' if gx['sign'] == 'negative' else 'hold back'} moves today."]
+        if gx.get("put_wall"): parts.append(f"Put wall {gx['put_wall']:,.0f}.")
+        if gx.get("call_wall"): parts.append(f"Call wall {gx['call_wall']:,.0f}.")
+        if gx.get("flip"): parts.append(f"Flip line {gx['flip']:,.0f}.")
+        L.append(" ".join(parts))
+    if plan.get("if_it_breaks"):
+        L.append(plan["if_it_breaks"])
+    L.append("Hands off from 9:30 to 9:50. Live ideas from 9:50 to 11:05, and everything is flat by 11:30.")
+    c7 = i.get("c7")
+    L.append(f"Excel users: C5 = {g['c5']:.2f}, C6 = {c6:.2f}, C7 = {c7:+.2f}." if c7 is not None else f"Excel users: C5 = {g['c5']:.2f}, C6 = {c6:.2f}.")
+    L.append(f"TradingView script, its 9 inputs top to bottom: {sg['call_fence']:.0f} / {sg['call_node']:.0f} / {g['c13']:.2f} / {g['c14']:.2f} / "
+             f"{g['c15']:.2f} / {g['c16']:.2f} / {g['c17']:.2f} / {sg['put_node']:.0f} / {sg['put_fence']:.0f}")
+    return "\n".join(L)
+
+
 def strike_grid_post(plan: Dict, session_title: str) -> str:
     g, sg, i = plan["grid"], plan["strike_grid"], plan["inputs"]
     r = plan["regime"]

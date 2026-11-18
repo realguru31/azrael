@@ -233,7 +233,8 @@ def audit_text_compact(a: SessionAudit) -> str:
         trig = _re.sub(r"\s*·\s*·\s*", " · ", trig)
         trig = _re.sub(r"Next EM level ([\d.]+), ([\d.]+) pts of room", r"room \2 to \1", trig)
         trig = trig.replace(" pts wide", " wide").rstrip(" ·")
-        res_name = "FLAT 11:30" if str(r.get("resolution", "")).startswith("flat") else str(r.get("resolution", "")).upper()
+        res_name = {"flat_1130": "FLAT 11:30", "stopped_be": "HALF +1R → STOPPED AT ENTRY", "close_through_entry": "HALF +1R → CLOSE BACK THROUGH ENTRY",
+                    "target": "TARGET", "stopped": "STOPPED"}.get(str(r.get("resolution", "")), str(r.get("resolution", "")).upper())
         res = (f"{res_name} {r['exit_time']} at {r['exit_price']:.2f} · {r['pnl_pts']:+.2f} pts · {r['r_multiple']:+.2f}R" if r.get("exit_price") is not None else "open")
         over = ""
         if r.get("resolution") == "stopped" and r.get("r_multiple") is not None and r["r_multiple"] < -1.0:
@@ -248,7 +249,9 @@ def audit_text_compact(a: SessionAudit) -> str:
     if a.score_line:
         L.append("SCORE   " + a.score_line.replace("score ", "").replace(" — dropped — ", " → DROPPED: ").replace(" — sent ", " → SENT ").replace(" — waiting", " → WAITING"))
     # one-line lesson in execution language
-    if a.replay and a.replay.get("resolution") == "stopped" and a.replay.get("r_multiple") is not None:
+    if a.replay and a.replay.get("resolution") in ("stopped_be", "close_through_entry"):
+        L.append(f"LESSON  half off at +1R paid: {a.replay['r_multiple']:+.2f}R with the rest {'stopped at the entry' if a.replay['resolution'] == 'stopped_be' else 'out on a close back through the entry'}")
+    elif a.replay and a.replay.get("resolution") == "stopped" and a.replay.get("r_multiple") is not None:
         rm = a.replay["r_multiple"]
         L.append(f"LESSON  close-based stop fills where the bar finishes: {rm:+.2f}R on a planned 1R — size for the overshoot" if rm < -1.0
                  else f"LESSON  stopped at {rm:+.2f}R — the structural stop did its job")

@@ -58,6 +58,29 @@ def volume_king_node(chain: Optional[pd.DataFrame], c15: float, em: float) -> Op
                      "p_volume": int(t.get("p_volume", 0))} for _, t in top.iterrows()]}
 
 
+def gex_summary(chain: Optional[pd.DataFrame], c15: float, em: float) -> Optional[Dict]:
+    """The 8:30 post's GEX line, estimated from the chain the app holds (dealer sign: calls +, puts −; $ per point =
+    gamma × OI × 100 × spot). The desk estimates it from SPY options; this is an approximation and says so."""
+    if chain is None or chain.empty or "c_gamma" not in chain:
+        return None
+    w = chain[(chain["strike"] >= c15 - 2 * em) & (chain["strike"] <= c15 + 2 * em)].copy()
+    if w.empty:
+        return None
+    w["call_gex"] = w["c_gamma"] * w["c_oi"] * 100 * c15
+    w["put_gex"] = w["p_gamma"] * w["p_oi"] * 100 * c15
+    w["net"] = w["call_gex"] - w["put_gex"]
+    net = float(w["net"].sum()) / 1e6
+    put_wall = float(w.loc[w["put_gex"].idxmax(), "strike"]) if w["put_gex"].max() > 0 else None
+    call_wall = float(w.loc[w["call_gex"].idxmax(), "strike"]) if w["call_gex"].max() > 0 else None
+    flip = None
+    s = w.sort_values("strike"); cum = s["net"].cumsum().values; ks = s["strike"].values
+    for i in range(len(ks) - 1):
+        if cum[i] == 0 or (cum[i] < 0) != (cum[i + 1] < 0):
+            flip = float(ks[i + 1]); break
+    return {"net_m": round(net, 1), "sign": "negative" if net < 0 else "positive", "put_wall": put_wall, "call_wall": call_wall,
+            "flip": flip, "note": "estimated from the SPX chain the app holds (the desk uses SPY options)"}
+
+
 def gex_profile(chain: pd.DataFrame, anchor: float, em: float, mult: float = 1.5) -> pd.DataFrame:
     band = within_em(chain, anchor, em, mult)
     if band is None or band.empty:

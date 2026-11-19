@@ -1,0 +1,65 @@
+{
+ "session": "WEDNESDAY (NOV 18, 2026)",
+ "settlement": 7323.63,
+ "anchor": 7340.53,
+ "vix": 24.58,
+ "vix_print_time": "08:15",
+ "em": 113.66035969029339,
+ "c13": 7454.190359690293,
+ "c14": 7397.360179845146,
+ "c15": 7340.53,
+ "c16": 7283.699820154853,
+ "c17": 7226.8696403097065,
+ "put_node": 7285.0,
+ "call_node": 7395.0,
+ "put_fence": 7200.0,
+ "call_fence": 7485.0,
+ "session_low": 7285.76,
+ "session_low_time": "11:20",
+ "session_high": 7367.68,
+ "session_high_time": "09:30",
+ "range_pts": 81.92,
+ "range_em": 0.72,
+ "inside_1sigma": true,
+ "inside_half": true,
+ "walls_tested": false,
+ "wall_tested_side": "",
+ "half_shelves_held": true,
+ "king_node_touched": "neither node was traded through",
+ "stops_run": [
+  "pre-market low 7343.50 taken out (session low 7285.76 at 11:20)",
+  "prior session low 7288.34 taken out (session low 7285.76 at 11:20)",
+  "round hundred 7300 traded through"
+ ],
+ "nearest_miss": "the window low of 7285.76 sat 0.76 pts above the 7285 put node",
+ "score_line": "",
+ "provisional": false,
+ "last_print": null,
+ "last_print_time": "",
+ "settle_zone": "between C16 and C15",
+ "regime": 3,
+ "replay": null,
+ "also_checked": [
+  "Not eligible at VIX 24.58: Archetype 1 (needs VIX under 15).",
+  "Not eligible at VIX 24.58: Archetype 2 (needs VIX 18.5 or under).",
+  "Archetype 3 did not qualify: 10:35 broke short but the box was 27.46 pts wide (limit 22.73); 10:40 broke short but the box was 34.61 pts wide (limit 22.73).",
+  "Archetype 4 did not qualify: no two consecutive closes beyond a 0.5 shelf between 09:50 and 11:05."
+ ],
+ "lesson": "The window low of 7285.76 sat 0.76 pts above the 7285 put node, and in a negative gamma (volatility expansion) inside the expected move, only an actual tag of the written level makes the setup live. Not trading was the trade.",
+ "proxies": [
+  {
+   "name": "SPY",
+   "settle": 735.41,
+   "band_lo": 721.0989396335744,
+   "band_hi": 743.7810603664257,
+   "em": 11.341060366425651
+  },
+  {
+   "name": "CAPITALCOM:SPX500 (08:20 price)",
+   "settle": 7351.5,
+   "band_lo": 7242.690813320345,
+   "band_hi": 7470.509186679656,
+   "em": 113.9091866796556
+  }
+ ]
+}
